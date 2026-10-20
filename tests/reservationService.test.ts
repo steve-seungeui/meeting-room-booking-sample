@@ -60,6 +60,35 @@ describe("ReservationService", () => {
       expect(other.status).toBe("confirmed");
     });
 
+    it("같은 회의실, 같은 시간대의 요청이 동시에 들어오면 한 건만 예약된다", async () => {
+      const results = await Promise.allSettled(
+        Array.from({ length: 5 }, () => services.reservationService.create(booking())),
+      );
+
+      const fulfilled = results.filter((result) => result.status === "fulfilled");
+      const rejected = results.filter(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(4);
+      for (const result of rejected) {
+        expect(result.reason).toBeInstanceOf(ConflictError);
+      }
+
+      const stored = await services.reservationRepository.findByRoom("room-302");
+      expect(stored).toHaveLength(1);
+    });
+
+    it("겹치지 않는 요청은 동시에 들어와도 모두 예약된다", async () => {
+      const results = await Promise.allSettled([
+        services.reservationService.create(booking()),
+        services.reservationService.create(booking({ start: at("11:00"), end: at("12:00") })),
+        services.reservationService.create(booking({ roomId: "room-501" })),
+      ]);
+
+      expect(results.every((result) => result.status === "fulfilled")).toBe(true);
+    });
+
     it("수용 인원을 넘으면 거절한다", async () => {
       const attendees = ["a@example.com", "b@example.com", "c@example.com", "d@example.com"];
 

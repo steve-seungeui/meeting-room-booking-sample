@@ -21,14 +21,6 @@ export class ReservationService {
     const now = this.clock.now();
     validateNewReservation(input, room, now);
 
-    const existing = await this.reservations.findByRoom(input.roomId);
-    const conflict = existing.find((reservation) => overlaps(reservation, input));
-    if (conflict) {
-      throw new ConflictError(
-        `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다: ${conflict.title}`,
-      );
-    }
-
     const reservation: Reservation = {
       id: newId("rsv"),
       roomId: input.roomId,
@@ -40,7 +32,12 @@ export class ReservationService {
       status: "confirmed",
       createdAt: now,
     };
-    await this.reservations.save(reservation);
+    const conflict = await this.reservations.createIfAvailable(reservation);
+    if (conflict) {
+      throw new ConflictError(
+        `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다: ${conflict.title}`,
+      );
+    }
 
     const mail = confirmedMail(reservation, room);
     await sendMail({ to: [reservation.organizer, ...reservation.attendees], ...mail });
