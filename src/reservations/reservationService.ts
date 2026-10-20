@@ -1,0 +1,90 @@
+import { sendMail } from "../notifications/legacyMailer.js";
+import { cancelledMail, confirmedMail } from "../notifications/templates.js";
+import type { RoomService } from "../rooms/roomService.js";
+import type { Clock } from "../shared/clock.js";
+import { ConflictError, NotFoundError, ValidationError } from "../shared/errors.js";
+import { newId } from "../shared/ids.js";
+import { overlaps } from "./overlap.js";
+import type { NewReservation, Reservation } from "./reservation.js";
+import type { ReservationRepository } from "./reservationRepository.js";
+import { validateNewReservation } from "./validation.js";
+
+export class ReservationService {
+  constructor(
+    private readonly reservations: ReservationRepository,
+    private readonly rooms: RoomService,
+    private readonly clock: Clock,
+  ) {}
+
+  async create(input: NewReservation): Promise<Reservation> {
+    const room = await this.rooms.get(input.roomId);
+    const now = this.clock.now();
+    validateNewReservation(input, room, now);
+
+    const existing = await this.reservations.findByRoom(input.roomId);
+    const conflict = existing.find((reservation) => overlaps(reservation, input));
+    if (conflict) {
+      throw new ConflictError(
+        `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다: ${conflict.title}`,
+      );
+    }
+
+    const reservation: Reservation = {
+      id: newId("rsv"),
+      roomId: input.roomId,
+      title: input.title.trim(),
+      organizer: input.organizer,
+      attendees: [...new Set(input.attendees)],
+      start: input.start,
+      end: input.end,
+      status: "confirmed",
+      createdAt: now,
+    };
+    await this.reservations.save(reservation);
+
+    const mail = confirmedMail(reservation, room);
+    await sendMail({ to: [reservation.organizer, ...reservation.attendees], ...mail });
+    return reservation;
+  }
+
+  async cancel(id: string, requestedBy: string): Promise<Reservation> {
+    const reservation = await this.get(id);
+    if (reservation.status === "cancelled") {
+      return reservation;
+    }
+    if (reservation.organizer !== requestedBy) {
+      throw new ValidationError("예약을 만든 사람만 취소할 수 있습니다.");
+    }
+    const cancelled: Reservation = {
+      ...reservation,
+      status: "cancelled",
+      cancelledAt: this.clock.now(),
+    };
+    await this.reservations.save(cancelled);
+
+    const room = await this.rooms.get(reservation.roomId);
+    const mail = cancelledMail(cancelled, room);
+    await sendMail({ to: [cancelled.organizer, ...cancelled.attendees], ...mail });
+    return cancelled;
+  }
+
+  async get(id: string): Promise<Reservation> {
+    const reservation = await this.reservations.findById(id);
+    if (!reservation) {
+      throw new NotFoundError(`예약을 찾을 수 없습니다: ${id}`);
+    }
+    return reservation;
+  }
+
+  /** 회의실의 하루 일정을 시작 시각 순으로 돌려준다. 취소된 예약은 보여 주지 않는다. */
+  async scheduleOf(roomId: string, day: Date): Promise<Reservation[]> {
+    await this.rooms.get(roomId);
+    const dayStart = new Date(day);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const all = await this.reservations.findByRoom(roomId);
+    return all
+      .filter((reservation) => reservation.status === "confirmed")
+      .filter((reservation) => overlaps(reservation, { start: dayStart, end: dayEnd }))
+      .sort((a, b) => a.start.getTime() - b.start.getTime());
+  }
+}

@@ -1,0 +1,66 @@
+import request from "supertest";
+import { describe, expect, it } from "vitest";
+import { createApp } from "../src/app.js";
+import { fixedClock } from "../src/shared/clock.js";
+
+function app() {
+  return createApp({ clock: fixedClock("2026-11-02T08:00:00+09:00") }).app;
+}
+
+const body = {
+  roomId: "room-302",
+  title: "스프린트 계획",
+  organizer: "kim@example.com",
+  attendees: ["lee@example.com"],
+  start: "2026-11-02T14:00:00+09:00",
+  end: "2026-11-02T15:00:00+09:00",
+};
+
+describe("HTTP API", () => {
+  it("GET /rooms는 설비 조건으로 거른 목록을 돌려준다", async () => {
+    const response = await request(app()).get("/rooms?equipment=video_conference");
+
+    expect(response.status).toBe(200);
+    expect(response.body.map((room: { id: string }) => room.id)).toEqual(["room-501", "room-502"]);
+  });
+
+  it("POST /reservations는 201과 예약 정보를 돌려준다", async () => {
+    const response = await request(app()).post("/reservations").send(body);
+
+    expect(response.status).toBe(201);
+    expect(response.body.status).toBe("confirmed");
+    expect(response.body.start).toBe("2026-11-02T05:00:00.000Z");
+  });
+
+  it("겹치는 예약은 409를 돌려준다", async () => {
+    const server = app();
+    await request(server).post("/reservations").send(body);
+    const response = await request(server).post("/reservations").send(body);
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe("CONFLICT");
+  });
+
+  it("필수 값이 없으면 400을 돌려준다", async () => {
+    const response = await request(app()).post("/reservations").send({ ...body, title: undefined });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("GET /rooms/:roomId/schedule은 그날의 예약을 돌려준다", async () => {
+    const server = app();
+    await request(server).post("/reservations").send(body);
+    const response = await request(server).get("/rooms/room-302/schedule?date=2026-11-02");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveLength(1);
+  });
+
+  it("POST /reservations/:id/cancel은 X-User-Email 헤더가 필요하다", async () => {
+    const server = app();
+    const created = await request(server).post("/reservations").send(body);
+    const response = await request(server).post(`/reservations/${created.body.id}/cancel`);
+
+    expect(response.status).toBe(400);
+  });
+});
