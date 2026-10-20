@@ -1,0 +1,179 @@
+:root {
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --text: #1c2330;
+  --muted: #667085;
+  --border: #d9dee7;
+  --accent: #2455d6;
+  --accent-text: #ffffff;
+  --danger: #b42318;
+  --ok-bg: #e7f6ec;
+  --err-bg: #fdecea;
+  --sel: #e8eefc;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11151c;
+    --panel: #1a2029;
+    --text: #e6e9ef;
+    --muted: #98a2b3;
+    --border: #2f3846;
+    --accent: #6b93ff;
+    --accent-text: #0b1020;
+    --danger: #ff8a80;
+    --ok-bg: #12301f;
+    --err-bg: #3a1a17;
+    --sel: #22304f;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+}
+
+h1, h2 { margin: 0; }
+h1 { font-size: 1.25rem; }
+h2 { font-size: 1.05rem; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.me { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--muted); }
+.me input { width: 15rem; max-width: 100%; }
+
+.layout {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+@media (min-width: 900px) {
+  .layout { grid-template-columns: 260px 1fr 320px; align-items: start; }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.panel-head input { width: auto; }
+
+.muted { color: var(--muted); font-size: 0.875rem; margin: 4px 0; }
+
+input, textarea, button { font: inherit; }
+
+input, textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+input:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+form label { display: block; margin-top: 12px; font-size: 0.9rem; }
+form label input, form label textarea { margin-top: 4px; }
+.row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.row label { min-width: 0; }
+@media (max-width: 420px) {
+  .row { grid-template-columns: 1fr 1fr; }
+  .row label:first-child { grid-column: 1 / -1; }
+}
+
+button {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+}
+button:disabled { opacity: 0.6; cursor: progress; }
+form button { width: 100%; margin-top: 12px; }
+button.danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
+  min-height: 36px;
+  padding: 4px 12px;
+}
+
+ul { list-style: none; margin: 0; padding: 0; }
+
+.rooms li + li { margin-top: 8px; }
+.room {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.room[aria-pressed="true"] { background: var(--sel); border-color: var(--accent); }
+.room small { display: block; color: var(--muted); }
+
+.schedule li:not(.muted) {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+}
+.schedule li + li { margin-top: 8px; }
+.schedule .time { font-weight: 600; font-variant-numeric: tabular-nums; }
+.schedule .title { overflow-wrap: anywhere; }
+.schedule .meta { color: var(--muted); font-size: 0.875rem; overflow-wrap: anywhere; }
+.schedule button { margin-top: 6px; }
+
+.toast {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--ok-bg);
+  color: var(--text);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
+}
+.toast.error { background: var(--err-bg); }
+[hidden] { display: none !important; }

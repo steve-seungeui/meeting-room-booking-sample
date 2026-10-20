@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>회의실 예약</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>회의실 예약</h1>
+    <label class="me">
+      <span>내 이메일</span>
+      <input id="me" type="email" autocomplete="email" placeholder="you@company.com">
+    </label>
+  </header>
+
+  <main class="layout">
+    <section class="panel" aria-labelledby="rooms-title">
+      <h2 id="rooms-title">회의실</h2>
+      <ul id="rooms" class="rooms"></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="schedule-title">
+      <div class="panel-head">
+        <h2 id="schedule-title">일정</h2>
+        <label class="date">
+          <span class="sr-only">날짜 (한국 시간)</span>
+          <input id="date" type="date" required>
+        </label>
+      </div>
+      <p id="schedule-room" class="muted">회의실을 선택해 주세요.</p>
+      <ul id="schedule" class="schedule"></ul>
+    </section>
+
+    <section class="panel" aria-labelledby="book-title">
+      <h2 id="book-title">예약 만들기</h2>
+      <form id="book" novalidate>
+        <label>회의 제목
+          <input name="title" required maxlength="100">
+        </label>
+        <label>주최자 이메일
+          <input name="organizer" type="email" required autocomplete="email">
+        </label>
+        <label>참석자 이메일
+          <textarea name="attendees" rows="2" placeholder="쉼표나 줄바꿈으로 구분"></textarea>
+        </label>
+        <div class="row">
+          <label>날짜
+            <input name="date" type="date" required>
+          </label>
+          <label>시작
+            <input name="start" type="time" step="300" required>
+          </label>
+          <label>종료
+            <input name="end" type="time" step="300" required>
+          </label>
+        </div>
+        <p class="muted">모든 시각은 한국 시간(KST) 기준입니다.</p>
+        <button type="submit" id="book-submit">예약하기</button>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>

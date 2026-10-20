@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import express from "express";
 import { errorHandler } from "./http/errorHandler.js";
 import { reservationRoutes } from "./http/routes/reservations.js";
@@ -27,6 +28,7 @@ export function createApp(deps: AppDependencies = {}) {
   const services = createServices(deps);
   const app = express();
   app.use(express.json());
+  app.use(express.static(fileURLToPath(new URL("../public", import.meta.url))));
   app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
   });
