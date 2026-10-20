@@ -36,6 +36,30 @@ describe("ReservationService", () => {
       expect(sentMails()[0].to).toEqual(["kim@example.com", "lee@example.com", "park@example.com"]);
     });
 
+    it("확정 메일에 제목, 회의실, 일시, 주최자가 들어간다", async () => {
+      await services.reservationService.create(booking());
+
+      expect(sentMails()[0]).toEqual({
+        to: ["kim@example.com", "lee@example.com", "park@example.com"],
+        subject: "[회의실 예약] 주간 회의",
+        body: [
+          "백두(3층) 회의실 예약이 확정되었습니다.",
+          "일시: 11월 2일 (월) 10:00 ~ 11월 2일 (월) 11:00",
+          "주최: kim@example.com",
+        ].join("\n"),
+      });
+    });
+
+    it("예약이 거절되면 메일을 보내지 않는다", async () => {
+      await services.reservationService.create(booking());
+      clearSentMails();
+
+      await expect(
+        services.reservationService.create(booking({ start: at("10:30"), end: at("11:30") })),
+      ).rejects.toBeInstanceOf(ConflictError);
+      expect(sentMails()).toHaveLength(0);
+    });
+
     it("같은 회의실의 겹치는 시간에는 예약할 수 없다", async () => {
       await services.reservationService.create(booking());
 
@@ -96,6 +120,44 @@ describe("ReservationService", () => {
 
       expect(cancelled.status).toBe("cancelled");
       expect(sentMails()[0].subject).toContain("취소");
+    });
+
+    it("취소 메일은 주최자와 참석자 모두에게 한 통 보낸다", async () => {
+      const reservation = await services.reservationService.create(booking());
+      clearSentMails();
+
+      await services.reservationService.cancel(reservation.id, "kim@example.com");
+
+      expect(sentMails()).toEqual([
+        {
+          to: ["kim@example.com", "lee@example.com", "park@example.com"],
+          subject: "[회의실 예약 취소] 주간 회의",
+          body: [
+            "백두(3층) 회의실 예약이 취소되었습니다.",
+            "일시: 11월 2일 (월) 10:00 ~ 11월 2일 (월) 11:00",
+          ].join("\n"),
+        },
+      ]);
+    });
+
+    it("이미 취소된 예약을 다시 취소하면 메일을 또 보내지 않는다", async () => {
+      const reservation = await services.reservationService.create(booking());
+      await services.reservationService.cancel(reservation.id, "kim@example.com");
+      clearSentMails();
+
+      await services.reservationService.cancel(reservation.id, "kim@example.com");
+
+      expect(sentMails()).toHaveLength(0);
+    });
+
+    it("취소가 거절되면 메일을 보내지 않는다", async () => {
+      const reservation = await services.reservationService.create(booking());
+      clearSentMails();
+
+      await expect(
+        services.reservationService.cancel(reservation.id, "lee@example.com"),
+      ).rejects.toBeInstanceOf(ValidationError);
+      expect(sentMails()).toHaveLength(0);
     });
 
     it("주최자가 아니면 취소할 수 없다", async () => {
