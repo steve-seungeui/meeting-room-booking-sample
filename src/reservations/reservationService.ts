@@ -22,7 +22,9 @@ export class ReservationService {
     validateNewReservation(input, room, now);
 
     const existing = await this.reservations.findByRoom(input.roomId);
-    const conflict = existing.find((reservation) => overlaps(reservation, input));
+    const conflict = existing.find(
+      (reservation) => reservation.status === "confirmed" && overlaps(reservation, input),
+    );
     if (conflict) {
       throw new ConflictError(
         `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다: ${conflict.title}`,

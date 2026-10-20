@@ -113,5 +113,15 @@ describe("ReservationService", () => {
       const schedule = await services.reservationService.scheduleOf("room-302", at("00:00"));
       expect(schedule).toHaveLength(0);
     });
+
+    it("취소한 예약과 같은 시간으로 다시 예약할 수 있다", async () => {
+      const reservation = await services.reservationService.create(booking());
+      await services.reservationService.cancel(reservation.id, "kim@example.com");
+
+      const rebooked = await services.reservationService.create(booking());
+
+      expect(rebooked.status).toBe("confirmed");
+      expect(rebooked.id).not.toBe(reservation.id);
+    });
   });
 });
