@@ -9,7 +9,7 @@ app.listen(port, () => {
 });
 
 setInterval(() => {
-  runReminderJob(services.reservationRepository, services.roomService, services.clock).catch((error) => {
+  runReminderJob(services.reservationRepository, services.roomService, services.clock, services.notifier).catch((error) => {
     console.error("[reminder] 실행 실패", error);
   });
 }, 60_000);

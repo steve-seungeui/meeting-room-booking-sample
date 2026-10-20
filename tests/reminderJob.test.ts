@@ -34,7 +34,8 @@ describe("runReminderJob", () => {
   let clock: ReturnType<typeof movableClock>;
   let services: ReturnType<typeof createServices>;
 
-  const run = () => runReminderJob(services.reservationRepository, services.roomService, clock);
+  const run = () =>
+    runReminderJob(services.reservationRepository, services.roomService, clock, services.notifier);
 
   beforeEach(() => {
     clock = movableClock("08:00");

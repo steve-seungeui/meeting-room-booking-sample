@@ -2,6 +2,8 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { errorHandler } from "./http/errorHandler.js";
 import { reservationRoutes } from "./http/routes/reservations.js";
+import { MailNotifier } from "./notifications/mailNotifier.js";
+import type { Notifier } from "./notifications/notifier.js";
 import { roomRoutes } from "./http/routes/rooms.js";
 import { InMemoryReservationRepository, type ReservationRepository } from "./reservations/reservationRepository.js";
 import { ReservationService } from "./reservations/reservationService.js";
@@ -13,15 +15,17 @@ export interface AppDependencies {
   roomRepository?: RoomRepository;
   reservationRepository?: ReservationRepository;
   clock?: Clock;
+  notifier?: Notifier;
 }
 
 export function createServices(deps: AppDependencies = {}) {
   const roomRepository = deps.roomRepository ?? new InMemoryRoomRepository();
   const reservationRepository = deps.reservationRepository ?? new InMemoryReservationRepository();
   const clock = deps.clock ?? systemClock;
+  const notifier = deps.notifier ?? new MailNotifier();
   const roomService = new RoomService(roomRepository);
-  const reservationService = new ReservationService(reservationRepository, roomService, clock);
-  return { roomService, reservationService, reservationRepository, clock };
+  const reservationService = new ReservationService(reservationRepository, roomService, clock, notifier);
+  return { roomService, reservationService, reservationRepository, clock, notifier };
 }
 
 export function createApp(deps: AppDependencies = {}) {

@@ -1,4 +1,4 @@
-import { sendMail } from "../notifications/legacyMailer.js";
+import type { Notifier } from "../notifications/notifier.js";
 import { reminderMail } from "../notifications/templates.js";
 import type { ReservationRepository } from "../reservations/reservationRepository.js";
 import type { RoomService } from "../rooms/roomService.js";
@@ -14,6 +14,7 @@ export async function runReminderJob(
   reservations: ReservationRepository,
   rooms: RoomService,
   clock: Clock,
+  notifier: Notifier,
 ): Promise<number> {
   const now = clock.now();
   const until = new Date(now.getTime() + REMINDER_LEAD_MINUTES * 60_000);
@@ -26,7 +27,7 @@ export async function runReminderJob(
     }
     const room = await rooms.get(reservation.roomId);
     const mail = reminderMail(reservation, room);
-    await sendMail({ to: [reservation.organizer, ...reservation.attendees], ...mail });
+    await notifier.notify({ recipients: [reservation.organizer, ...reservation.attendees], ...mail });
     await reservations.save({ ...reservation, remindedAt: now });
     sent += 1;
   }

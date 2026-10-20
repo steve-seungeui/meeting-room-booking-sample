@@ -1,4 +1,4 @@
-import { sendMail } from "../notifications/legacyMailer.js";
+import type { Notifier } from "../notifications/notifier.js";
 import { cancelledMail, confirmedMail } from "../notifications/templates.js";
 import type { RoomService } from "../rooms/roomService.js";
 import type { Clock } from "../shared/clock.js";
@@ -14,6 +14,7 @@ export class ReservationService {
     private readonly reservations: ReservationRepository,
     private readonly rooms: RoomService,
     private readonly clock: Clock,
+    private readonly notifier: Notifier,
   ) {}
 
   async create(input: NewReservation): Promise<Reservation> {
@@ -43,7 +44,7 @@ export class ReservationService {
     await this.reservations.save(reservation);
 
     const mail = confirmedMail(reservation, room);
-    await sendMail({ to: [reservation.organizer, ...reservation.attendees], ...mail });
+    await this.notifier.notify({ recipients: [reservation.organizer, ...reservation.attendees], ...mail });
     return reservation;
   }
 
@@ -64,7 +65,7 @@ export class ReservationService {
 
     const room = await this.rooms.get(reservation.roomId);
     const mail = cancelledMail(cancelled, room);
-    await sendMail({ to: [cancelled.organizer, ...cancelled.attendees], ...mail });
+    await this.notifier.notify({ recipients: [cancelled.organizer, ...cancelled.attendees], ...mail });
     return cancelled;
   }
 
