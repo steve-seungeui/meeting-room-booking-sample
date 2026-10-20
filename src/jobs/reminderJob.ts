@@ -27,7 +27,7 @@ export async function runReminderJob(
     const room = await rooms.get(reservation.roomId);
     const mail = reminderMail(reservation, room);
     await sendMail({ to: [reservation.organizer, ...reservation.attendees], ...mail });
-    await reservations.save({ ...reservation, remindedAt: now });
+    await reservations.markReminded(reservation.id, now);
     sent += 1;
   }
   return sent;

@@ -89,6 +89,17 @@ describe("ReservationService", () => {
       expect(results.every((result) => result.status === "fulfilled")).toBe(true);
     });
 
+    it("취소된 예약과 겹치는 시간에는 다시 예약할 수 있다", async () => {
+      const first = await services.reservationService.create(booking());
+      await services.reservationService.cancel(first.id, "kim@example.com");
+
+      const again = await services.reservationService.create(booking({ title: "재예약" }));
+
+      expect(again.status).toBe("confirmed");
+      const schedule = await services.reservationService.scheduleOf("room-302", at("00:00"));
+      expect(schedule.map((reservation) => reservation.id)).toEqual([again.id]);
+    });
+
     it("수용 인원을 넘으면 거절한다", async () => {
       const attendees = ["a@example.com", "b@example.com", "c@example.com", "d@example.com"];
 
