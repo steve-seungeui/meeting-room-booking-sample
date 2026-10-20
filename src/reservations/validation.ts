@@ -1,6 +1,7 @@
 import { ValidationError } from "../shared/errors.js";
 import type { Room } from "../rooms/room.js";
 import type { NewReservation } from "./reservation.js";
+import { MAX_SERIES_OCCURRENCES, MIN_SERIES_OCCURRENCES, type Recurrence } from "./series.js";
 
 export const MAX_DURATION_MINUTES = 240;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -35,4 +36,47 @@ export function validateNewReservation(input: NewReservation, room: Room, now: D
       `참석 인원 ${headcount}명이 ${room.name} 회의실의 수용 인원 ${room.capacity}명을 넘습니다.`,
     );
   }
+}
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 2026-02-31처럼 다음 달로 넘어가는 날짜를 거른다. */
+function isCalendarDate(date: string): boolean {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date;
+}
+
+/** 요청의 recurrence 값을 검증해 반복 규칙으로 돌려준다. */
+export function validateRecurrence(raw: unknown): Recurrence {
+  if (typeof raw !== "object" || raw === null) {
+    throw new ValidationError("recurrence 값이 필요합니다.");
+  }
+  const { frequency, count, until } = raw as Record<string, unknown>;
+  if (frequency !== "weekly") {
+    throw new ValidationError("반복 주기는 weekly만 지원합니다.");
+  }
+  if ((count === undefined) === (until === undefined)) {
+    throw new ValidationError("count와 until 중 정확히 하나를 지정해야 합니다.");
+  }
+  if (count !== undefined) {
+    if (
+      typeof count !== "number" ||
+      !Number.isInteger(count) ||
+      count < MIN_SERIES_OCCURRENCES ||
+      count > MAX_SERIES_OCCURRENCES
+    ) {
+      throw new ValidationError(
+        `count는 ${MIN_SERIES_OCCURRENCES} 이상 ${MAX_SERIES_OCCURRENCES} 이하의 정수여야 합니다.`,
+      );
+    }
+    return { frequency, count };
+  }
+  if (
+    typeof until !== "string" ||
+    !DATE_PATTERN.test(until) ||
+    !isCalendarDate(until)
+  ) {
+    throw new ValidationError("until은 YYYY-MM-DD 형식이어야 합니다.");
+  }
+  return { frequency, until };
 }

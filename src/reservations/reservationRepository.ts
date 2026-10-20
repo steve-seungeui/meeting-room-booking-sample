@@ -4,6 +4,8 @@ export interface ReservationRepository {
   findById(id: string): Promise<Reservation | undefined>;
   findByRoom(roomId: string): Promise<Reservation[]>;
   findStartingBetween(from: Date, to: Date): Promise<Reservation[]>;
+  /** 시리즈에 속한 회차를 시작 시각 순으로 돌려준다. */
+  findBySeries(seriesId: string): Promise<Reservation[]>;
   save(reservation: Reservation): Promise<void>;
 }
 
@@ -39,6 +41,13 @@ export class InMemoryReservationRepository implements ReservationRepository {
   async findStartingBetween(from: Date, to: Date): Promise<Reservation[]> {
     return [...this.items.values()]
       .filter((reservation) => reservation.start >= from && reservation.start < to)
+      .map(clone);
+  }
+
+  async findBySeries(seriesId: string): Promise<Reservation[]> {
+    return [...this.items.values()]
+      .filter((reservation) => reservation.seriesId === seriesId)
+      .sort((a, b) => a.start.getTime() - b.start.getTime())
       .map(clone);
   }
 

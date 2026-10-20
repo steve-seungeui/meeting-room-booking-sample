@@ -4,7 +4,7 @@ import type { RoomService } from "../rooms/roomService.js";
 import type { Clock } from "../shared/clock.js";
 import { ConflictError, NotFoundError, ValidationError } from "../shared/errors.js";
 import { newId } from "../shared/ids.js";
-import { overlaps } from "./overlap.js";
+import { overlaps, type TimeRange } from "./overlap.js";
 import type { NewReservation, Reservation } from "./reservation.js";
 import type { ReservationRepository } from "./reservationRepository.js";
 import { validateNewReservation } from "./validation.js";
@@ -21,11 +21,10 @@ export class ReservationService {
     const now = this.clock.now();
     validateNewReservation(input, room, now);
 
-    const existing = await this.reservations.findByRoom(input.roomId);
-    const conflict = existing.find((reservation) => overlaps(reservation, input));
+    const [conflict] = await this.findConflicts(input.roomId, [input]);
     if (conflict) {
       throw new ConflictError(
-        `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다: ${conflict.title}`,
+        `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다: ${conflict.existing.title}`,
       );
     }
 
@@ -45,6 +44,21 @@ export class ReservationService {
     const mail = confirmedMail(reservation, room);
     await sendMail({ to: [reservation.organizer, ...reservation.attendees], ...mail });
     return reservation;
+  }
+
+  /**
+   * 회의실의 기존 예약과 겹치는 구간을 찾는다. 단건 예약과 반복 예약이 같은 규칙으로 판정하도록 이 메서드를 함께 쓴다.
+   * 구간마다 처음 겹치는 기존 예약 하나를 돌려준다.
+   */
+  async findConflicts<T extends TimeRange>(
+    roomId: string,
+    ranges: T[],
+  ): Promise<Array<{ range: T; existing: Reservation }>> {
+    const existing = await this.reservations.findByRoom(roomId);
+    return ranges.flatMap((range) => {
+      const conflict = existing.find((reservation) => overlaps(reservation, range));
+      return conflict ? [{ range, existing: conflict }] : [];
+    });
   }
 
   async cancel(id: string, requestedBy: string): Promise<Reservation> {
