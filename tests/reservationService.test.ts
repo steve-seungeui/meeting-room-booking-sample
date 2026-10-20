@@ -44,6 +44,17 @@ describe("ReservationService", () => {
       ).rejects.toBeInstanceOf(ConflictError);
     });
 
+    it("같은 회의실, 같은 시간에 동시에 요청이 들어와도 한 건만 확정된다", async () => {
+      const results = await Promise.allSettled([
+        services.reservationService.create(booking()),
+        services.reservationService.create(booking({ start: at("10:30"), end: at("11:30") })),
+      ]);
+
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.find((result) => result.status === "rejected");
+      expect(rejected?.reason).toBeInstanceOf(ConflictError);
+    });
+
     it("이어지는 시간에는 예약할 수 있다", async () => {
       await services.reservationService.create(booking());
       const next = await services.reservationService.create(

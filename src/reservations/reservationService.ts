@@ -4,12 +4,16 @@ import type { RoomService } from "../rooms/roomService.js";
 import type { Clock } from "../shared/clock.js";
 import { ConflictError, NotFoundError, ValidationError } from "../shared/errors.js";
 import { newId } from "../shared/ids.js";
+import { KeyedLock } from "../shared/keyedLock.js";
 import { overlaps } from "./overlap.js";
 import type { NewReservation, Reservation } from "./reservation.js";
 import type { ReservationRepository } from "./reservationRepository.js";
 import { validateNewReservation } from "./validation.js";
 
 export class ReservationService {
+  /** 겹침 확인과 저장 사이에 같은 회의실의 다른 예약이 끼어들지 못하게 막는다. */
+  private readonly roomLock = new KeyedLock();
+
   constructor(
     private readonly reservations: ReservationRepository,
     private readonly rooms: RoomService,
@@ -21,26 +25,29 @@ export class ReservationService {
     const now = this.clock.now();
     validateNewReservation(input, room, now);
 
-    const existing = await this.reservations.findByRoom(input.roomId);
-    const conflict = existing.find((reservation) => overlaps(reservation, input));
-    if (conflict) {
-      throw new ConflictError(
-        `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다: ${conflict.title}`,
-      );
-    }
+    const reservation = await this.roomLock.run(input.roomId, async () => {
+      const existing = await this.reservations.findByRoom(input.roomId);
+      const conflict = existing.find((reservation) => overlaps(reservation, input));
+      if (conflict) {
+        throw new ConflictError(
+          `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다: ${conflict.title}`,
+        );
+      }
 
-    const reservation: Reservation = {
-      id: newId("rsv"),
-      roomId: input.roomId,
-      title: input.title.trim(),
-      organizer: input.organizer,
-      attendees: [...new Set(input.attendees)],
-      start: input.start,
-      end: input.end,
-      status: "confirmed",
-      createdAt: now,
-    };
-    await this.reservations.save(reservation);
+      const reservation: Reservation = {
+        id: newId("rsv"),
+        roomId: input.roomId,
+        title: input.title.trim(),
+        organizer: input.organizer,
+        attendees: [...new Set(input.attendees)],
+        start: input.start,
+        end: input.end,
+        status: "confirmed",
+        createdAt: now,
+      };
+      await this.reservations.save(reservation);
+      return reservation;
+    });
 
     const mail = confirmedMail(reservation, room);
     await sendMail({ to: [reservation.organizer, ...reservation.attendees], ...mail });
