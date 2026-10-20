@@ -12,6 +12,7 @@ export interface Reservation {
   createdAt: Date;
   cancelledAt?: Date;
   remindedAt?: Date;
+  seriesId?: string; // 시리즈에 속한 회차만 가진다
 }
 
 export interface NewReservation {
