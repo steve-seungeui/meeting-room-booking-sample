@@ -19,13 +19,21 @@ npm run typecheck
 | --- | --- |
 | `src/rooms/` | 회의실 목록과 조회 |
 | `src/reservations/` | 예약 생성, 취소, 겹침 판정, 하루 일정 조회 |
-| `src/notifications/` | 예약 확정, 취소, 리마인더 메일 |
+| `src/notifications/` | 예약 확정, 취소, 리마인더 알림(메일 또는 메신저 웹훅) |
 | `src/jobs/` | 회의 시작 전 리마인더 작업 |
 | `src/http/` | HTTP 라우트와 오류 처리 |
 | `public/` | 웹 화면 |
 | `tests/` | Vitest 테스트 |
 
 데이터는 메모리에 저장하므로 서버를 다시 시작하면 예약이 사라집니다.
+
+## 알림 설정
+
+`MESSENGER_WEBHOOK_URL` 환경 변수가 있으면 예약 알림을 사내 메신저 웹훅으로 보내고, 없으면 기존 메일 릴레이(`MAIL_RELAY_HOST`)로 보냅니다.
+
+```bash
+MESSENGER_WEBHOOK_URL=https://messenger.example.com/hooks/... npm start
+```
 
 ## 책과의 관계
 

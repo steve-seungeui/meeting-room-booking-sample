@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createServices } from "../src/app.js";
 import { runReminderJob } from "../src/jobs/reminderJob.js";
 import { clearSentMails, sentMails } from "../src/notifications/legacyMailer.js";
+import { MailNotifier } from "../src/notifications/mailNotifier.js";
 import type { NewReservation } from "../src/reservations/reservation.js";
 import type { Clock } from "../src/shared/clock.js";
 
@@ -39,7 +40,7 @@ describe("runReminderJob", () => {
 
   beforeEach(() => {
     clock = movableClock("08:00");
-    services = createServices({ clock });
+    services = createServices({ clock, notifier: new MailNotifier() });
     clearSentMails();
   });
 

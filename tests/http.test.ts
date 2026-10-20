@@ -1,10 +1,14 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { MailNotifier } from "../src/notifications/mailNotifier.js";
 import { fixedClock } from "../src/shared/clock.js";
 
 function app() {
-  return createApp({ clock: fixedClock("2026-11-02T08:00:00+09:00") }).app;
+  return createApp({
+    clock: fixedClock("2026-11-02T08:00:00+09:00"),
+    notifier: new MailNotifier(),
+  }).app;
 }
 
 const body = {

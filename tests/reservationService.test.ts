@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createServices } from "../src/app.js";
 import { clearSentMails, sentMails } from "../src/notifications/legacyMailer.js";
+import { MailNotifier } from "../src/notifications/mailNotifier.js";
 import type { NewReservation } from "../src/reservations/reservation.js";
 import { fixedClock } from "../src/shared/clock.js";
 import { ConflictError, NotFoundError, ValidationError } from "../src/shared/errors.js";
@@ -24,7 +25,10 @@ describe("ReservationService", () => {
 
   beforeEach(() => {
     clearSentMails();
-    services = createServices({ clock: fixedClock("2026-11-02T08:00:00+09:00") });
+    services = createServices({
+      clock: fixedClock("2026-11-02T08:00:00+09:00"),
+      notifier: new MailNotifier(),
+    });
   });
 
   describe("create", () => {
