@@ -6,6 +6,12 @@ export interface ReservationRepository {
   findByRoom(roomId: string): Promise<Reservation[]>;
   findStartingBetween(from: Date, to: Date): Promise<Reservation[]>;
   save(reservation: Reservation): Promise<void>;
+  /**
+   * 같은 회의실에 시간이 겹치는 예약이 없을 때만 저장한다.
+   * 검사와 저장이 한 문장으로 실행되므로 동시 요청 사이에서도 겹치는 예약이 둘 생기지 않는다.
+   * 저장했으면 true, 겹치는 예약이 있어 저장하지 않았으면 false를 돌려준다.
+   */
+  saveIfAvailable(reservation: Reservation): Promise<boolean>;
 }
 
 interface ReservationRow {
@@ -36,6 +42,22 @@ function toReservation(row: ReservationRow): Reservation {
     cancelledAt: row.cancelled_at ? new Date(row.cancelled_at) : undefined,
     remindedAt: row.reminded_at ? new Date(row.reminded_at) : undefined,
   };
+}
+
+function toParams(reservation: Reservation): unknown[] {
+  return [
+    reservation.id,
+    reservation.roomId,
+    reservation.title,
+    reservation.organizer,
+    JSON.stringify(reservation.attendees),
+    reservation.start.toISOString(),
+    reservation.end.toISOString(),
+    reservation.status,
+    reservation.createdAt.toISOString(),
+    reservation.cancelledAt?.toISOString() ?? null,
+    reservation.remindedAt?.toISOString() ?? null,
+  ];
 }
 
 /**
@@ -75,19 +97,27 @@ export class SqliteReservationRepository implements ReservationRepository {
            attendees = excluded.attendees, start_at = excluded.start_at, end_at = excluded.end_at,
            status = excluded.status, created_at = excluded.created_at,
            cancelled_at = excluded.cancelled_at, reminded_at = excluded.reminded_at`,
+      toParams(reservation),
+    );
+  }
+
+  async saveIfAvailable(reservation: Reservation): Promise<boolean> {
+    // 시각은 항상 toISOString()(고정 길이 UTC)으로 저장하므로 문자열 비교가 시간 비교와 같다.
+    // 겹침 조건은 overlap.ts와 같은 반열린 구간이다.
+    const { changes } = await this.db.run(
+      `INSERT INTO reservations
+           (id, room_id, title, organizer, attendees, start_at, end_at, status, created_at, cancelled_at, reminded_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM reservations WHERE room_id = ? AND start_at < ? AND end_at > ?
+         )`,
       [
-        reservation.id,
+        ...toParams(reservation),
         reservation.roomId,
-        reservation.title,
-        reservation.organizer,
-        JSON.stringify(reservation.attendees),
-        reservation.start.toISOString(),
         reservation.end.toISOString(),
-        reservation.status,
-        reservation.createdAt.toISOString(),
-        reservation.cancelledAt?.toISOString() ?? null,
-        reservation.remindedAt?.toISOString() ?? null,
+        reservation.start.toISOString(),
       ],
     );
+    return changes > 0;
   }
 }

@@ -23,7 +23,8 @@ const SCHEMA = `
 
 /** SQLite 연결을 감싼 비동기 인터페이스 */
 export interface Database {
-  run(sql: string, params?: unknown[]): Promise<void>;
+  /** 문장을 실행하고 영향받은 행 수를 돌려준다. */
+  run(sql: string, params?: unknown[]): Promise<{ changes: number }>;
   get<T>(sql: string, params?: unknown[]): Promise<T | undefined>;
   all<T>(sql: string, params?: unknown[]): Promise<T[]>;
 }
@@ -46,8 +47,14 @@ export function openDatabase(path: string): Database {
   return {
     async run(sql, params = []) {
       await ready;
-      await new Promise<void>((resolve, reject) => {
-        db.run(sql, params, (error) => (error ? reject(error) : resolve()));
+      return new Promise<{ changes: number }>((resolve, reject) => {
+        db.run(sql, params, function (error) {
+          if (error) {
+            reject(error);
+          } else {
+            resolve({ changes: this.changes });
+          }
+        });
       });
     },
     async get<T>(sql: string, params: unknown[] = []) {
