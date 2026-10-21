@@ -3,7 +3,8 @@ import express from "express";
 import { errorHandler } from "./http/errorHandler.js";
 import { reservationRoutes } from "./http/routes/reservations.js";
 import { roomRoutes } from "./http/routes/rooms.js";
-import { InMemoryReservationRepository, type ReservationRepository } from "./reservations/reservationRepository.js";
+import { openDatabase } from "./db/database.js";
+import { SqliteReservationRepository, type ReservationRepository } from "./reservations/reservationRepository.js";
 import { ReservationService } from "./reservations/reservationService.js";
 import { InMemoryRoomRepository, type RoomRepository } from "./rooms/roomRepository.js";
 import { RoomService } from "./rooms/roomService.js";
@@ -12,12 +13,15 @@ import { systemClock, type Clock } from "./shared/clock.js";
 export interface AppDependencies {
   roomRepository?: RoomRepository;
   reservationRepository?: ReservationRepository;
+  /** SQLite 파일 경로. 지정하지 않으면 메모리 DB를 쓴다(테스트용). */
+  databasePath?: string;
   clock?: Clock;
 }
 
 export function createServices(deps: AppDependencies = {}) {
   const roomRepository = deps.roomRepository ?? new InMemoryRoomRepository();
-  const reservationRepository = deps.reservationRepository ?? new InMemoryReservationRepository();
+  const reservationRepository = deps.reservationRepository ??
+    new SqliteReservationRepository(openDatabase(deps.databasePath ?? ":memory:"));
   const clock = deps.clock ?? systemClock;
   const roomService = new RoomService(roomRepository);
   const reservationService = new ReservationService(reservationRepository, roomService, clock);
