@@ -2,7 +2,7 @@
   "name": "meeting-room-booking-sample",
   "version": "0.1.0",
   "private": true,
-  "description": "사내 회의실 예약 API 예제 (개발 조직을 위한 Claude Code 도입·운영 가이드)",
+  "description": "사내 회의실 예약 API",
   "type": "module",
   "license": "MIT",
   "engines": {
