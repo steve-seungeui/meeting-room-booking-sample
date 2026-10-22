@@ -5,6 +5,8 @@ export interface ReservationRepository {
   findById(id: string): Promise<Reservation | undefined>;
   findByRoom(roomId: string): Promise<Reservation[]>;
   findStartingBetween(from: Date, to: Date): Promise<Reservation[]>;
+  /** 같은 회의실에서 주어진 구간과 겹치는 (취소되지 않은) 예약 하나를 돌려준다. 없으면 undefined. */
+  findConflict(roomId: string, start: Date, end: Date): Promise<Reservation | undefined>;
   save(reservation: Reservation): Promise<void>;
   /**
    * 같은 회의실에 시간이 겹치는 (취소되지 않은) 예약이 없을 때만 저장한다.
@@ -85,6 +87,16 @@ export class SqliteReservationRepository implements ReservationRepository {
       [from.toISOString(), to.toISOString()],
     );
     return rows.map(toReservation);
+  }
+
+  async findConflict(roomId: string, start: Date, end: Date): Promise<Reservation | undefined> {
+    const row = await this.db.get<ReservationRow>(
+      `SELECT * FROM reservations
+         WHERE room_id = ? AND status <> 'cancelled' AND end_at > ? AND start_at < ?
+         ORDER BY end_at LIMIT 1`,
+      [roomId, start.toISOString(), end.toISOString()],
+    );
+    return row ? toReservation(row) : undefined;
   }
 
   async save(reservation: Reservation): Promise<void> {

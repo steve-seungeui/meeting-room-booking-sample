@@ -18,6 +18,8 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS reservations_room ON reservations (room_id);
   CREATE INDEX IF NOT EXISTS reservations_start ON reservations (start_at);
+  -- 겹침 검사(room_id 일치 + end_at > 새 시작)가 지난 예약을 건너뛰고 해당 시간대 근처만 찾도록 한다.
+  CREATE INDEX IF NOT EXISTS reservations_room_end ON reservations (room_id, end_at, start_at);
 `;
 
 /** SQLite 연결을 감싼 비동기 인터페이스 */
