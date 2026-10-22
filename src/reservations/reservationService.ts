@@ -35,7 +35,7 @@ export class ReservationService {
     if (!(await this.reservations.saveIfAvailable(reservation))) {
       // 메시지에 쓸 충돌 예약을 찾는 조회일 뿐, 겹침 여부는 위의 저장 시도가 이미 결정했다.
       const existing = await this.reservations.findByRoom(input.roomId);
-      const conflict = existing.find((other) => overlaps(other, input));
+      const conflict = existing.find((other) => other.status !== "cancelled" && overlaps(other, input));
       throw new ConflictError(
         `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다${conflict ? `: ${conflict.title}` : ""}`,
       );

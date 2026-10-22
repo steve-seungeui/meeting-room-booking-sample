@@ -7,7 +7,7 @@ export interface ReservationRepository {
   findStartingBetween(from: Date, to: Date): Promise<Reservation[]>;
   save(reservation: Reservation): Promise<void>;
   /**
-   * 같은 회의실에 시간이 겹치는 예약이 없을 때만 저장한다.
+   * 같은 회의실에 시간이 겹치는 (취소되지 않은) 예약이 없을 때만 저장한다.
    * 검사와 저장이 한 문장으로 실행되므로 동시 요청 사이에서도 겹치는 예약이 둘 생기지 않는다.
    * 저장했으면 true, 겹치는 예약이 있어 저장하지 않았으면 false를 돌려준다.
    */
@@ -103,13 +103,13 @@ export class SqliteReservationRepository implements ReservationRepository {
 
   async saveIfAvailable(reservation: Reservation): Promise<boolean> {
     // 시각은 항상 toISOString()(고정 길이 UTC)으로 저장하므로 문자열 비교가 시간 비교와 같다.
-    // 겹침 조건은 overlap.ts와 같은 반열린 구간이다.
+    // 겹침 조건은 overlap.ts와 같은 반열린 구간이며, 취소된 예약은 시간대를 점유하지 않는다.
     const { changes } = await this.db.run(
       `INSERT INTO reservations
            (id, room_id, title, organizer, attendees, start_at, end_at, status, created_at, cancelled_at, reminded_at)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
          WHERE NOT EXISTS (
-           SELECT 1 FROM reservations WHERE room_id = ? AND start_at < ? AND end_at > ?
+           SELECT 1 FROM reservations WHERE room_id = ? AND status <> 'cancelled' AND start_at < ? AND end_at > ?
          )`,
       [
         ...toParams(reservation),

@@ -53,6 +53,22 @@ describe("ReservationService", () => {
       expect(next.status).toBe("confirmed");
     });
 
+    it("취소된 예약의 시간대에는 다시 예약할 수 있다", async () => {
+      const cancelled = await services.reservationService.create(booking({ title: "취소될 회의" }));
+      await services.reservationService.cancel(cancelled.id, "kim@example.com");
+
+      const next = await services.reservationService.create(booking({ title: "새 회의" }));
+      expect(next.status).toBe("confirmed");
+
+      // 충돌 메시지에는 취소된 예약이 아니라 확정된 예약이 나와야 한다.
+      const error = await services.reservationService
+        .create(booking({ title: "또 다른 회의" }))
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as ConflictError).message).toContain("새 회의");
+      expect((error as ConflictError).message).not.toContain("취소될 회의");
+    });
+
     it("다른 회의실이면 같은 시간에도 예약할 수 있다", async () => {
       await services.reservationService.create(booking());
       const other = await services.reservationService.create(booking({ roomId: "room-501" }));
