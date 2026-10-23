@@ -4,4 +4,4 @@
 
 # 커밋
 
-- 커밋 메시지는 한국어로 쓴다. 첫 줄에 변경 내용을 요약하고, 필요하면 빈 줄 다음에 이유를 적는다.
+- Write commit messages in English, following Conventional Commits (e.g. `docs: add single-file test command`).
