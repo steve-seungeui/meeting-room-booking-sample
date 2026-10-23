@@ -95,6 +95,70 @@ describe("동시 예약 요청", () => {
     expect(results.filter((r) => r.status === "rejected")).toEqual([]);
   });
 
+  it("DB 연결이 서로 다른 두 워커가 서로 다른 예약을 같은 시간대로 동시에 옮기면 한 건만 옮겨진다", async () => {
+    const databasePath = join(dir, "reservations.db");
+    const workerA = createServices({ clock, databasePath });
+    const workerB = createServices({ clock, databasePath });
+    const a = await workerA.reservationService.create(booking({ title: "A", start: at("09:00"), end: at("10:00") }));
+    const b = await workerA.reservationService.create(booking({ title: "B", start: at("13:00"), end: at("14:00") }));
+
+    const results = await Promise.allSettled([
+      workerA.reservationService.reschedule(a.id, a.organizer, at("15:00"), at("16:00")),
+      workerB.reservationService.reschedule(b.id, b.organizer, at("15:30"), at("16:30")),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    for (const result of results.filter((r) => r.status === "rejected")) {
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+    }
+    const stored = await workerA.reservationService.scheduleOf("room-302", at("00:00"));
+    expect(stored).toHaveLength(2);
+    expect(stored.filter((r) => r.start >= at("15:00"))).toHaveLength(1);
+  });
+
+  it("DB 연결이 서로 다른 두 워커에서 새 예약과 시간 변경이 같은 시간대를 노리면 한 건만 성공한다", async () => {
+    const databasePath = join(dir, "reservations.db");
+    const workerA = createServices({ clock, databasePath });
+    const workerB = createServices({ clock, databasePath });
+    const a = await workerA.reservationService.create(booking({ title: "A", start: at("09:00"), end: at("10:00") }));
+
+    const results = await Promise.allSettled([
+      workerA.reservationService.reschedule(a.id, a.organizer, at("15:00"), at("16:00")),
+      workerB.reservationService.create(booking({ title: "N", start: at("15:00"), end: at("16:00") })),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    for (const result of results.filter((r) => r.status === "rejected")) {
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+    }
+    const stored = await workerA.reservationService.scheduleOf("room-302", at("15:00"));
+    expect(stored).toHaveLength(1);
+  });
+
+  it("자기 자신의 기존 시간대와 겹치게 옮기는 것은 허용된다", async () => {
+    const { reservationService } = createServices({ clock });
+    const a = await reservationService.create(booking());
+
+    const moved = await reservationService.reschedule(a.id, a.organizer, at("10:30"), at("11:30"));
+
+    expect(moved.start).toEqual(at("10:30"));
+    expect((await reservationService.get(a.id)).end).toEqual(at("11:30"));
+  });
+
+  it("만든 사람이 아니면 시간을 바꿀 수 없고, 취소된 예약도 바꿀 수 없다", async () => {
+    const { reservationService } = createServices({ clock });
+    const a = await reservationService.create(booking());
+
+    await expect(reservationService.reschedule(a.id, "lee@example.com", at("12:00"), at("13:00"))).rejects.toThrow(
+      "만든 사람만",
+    );
+    await reservationService.cancel(a.id, a.organizer);
+    await expect(reservationService.reschedule(a.id, a.organizer, at("12:00"), at("13:00"))).rejects.toThrow(
+      "취소된",
+    );
+    expect((await reservationService.get(a.id)).start).toEqual(at("10:00"));
+  });
+
   it("같은 시간대라도 회의실이 다르면 동시에 모두 예약된다", async () => {
     const { reservationService } = createServices({ clock });
 

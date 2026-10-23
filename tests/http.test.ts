@@ -63,4 +63,27 @@ describe("HTTP API", () => {
 
     expect(response.status).toBe(400);
   });
+
+  it("PATCH /reservations/:id는 만든 사람이 시간을 바꾸게 하고, 겹치면 409를 돌려준다", async () => {
+    const server = app();
+    const first = await request(server).post("/reservations").send(body);
+    const second = await request(server)
+      .post("/reservations")
+      .send({ ...body, start: "2026-11-02T16:00:00+09:00", end: "2026-11-02T17:00:00+09:00" });
+    const patch = (id: string, email: string, start: string, end: string) =>
+      request(server).patch(`/reservations/${id}`).set("X-User-Email", email).send({ start, end });
+
+    const moved = await patch(first.body.id, "kim@example.com", "2026-11-02T11:00:00+09:00", "2026-11-02T12:00:00+09:00");
+    expect(moved.status).toBe(200);
+    expect(moved.body.start).toBe("2026-11-02T02:00:00.000Z");
+
+    const conflict = await patch(first.body.id, "kim@example.com", "2026-11-02T16:30:00+09:00", "2026-11-02T17:30:00+09:00");
+    expect(conflict.status).toBe(409);
+
+    const other = await patch(second.body.id, "lee@example.com", "2026-11-02T18:00:00+09:00", "2026-11-02T19:00:00+09:00");
+    expect(other.status).toBe(400);
+
+    const noHeader = await request(server).patch(`/reservations/${second.body.id}`).send({});
+    expect(noHeader.status).toBe(400);
+  });
 });

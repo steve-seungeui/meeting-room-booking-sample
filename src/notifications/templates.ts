@@ -36,6 +36,17 @@ export function cancelledMail(reservation: Reservation, room: Room) {
   };
 }
 
+export function rescheduledMail(reservation: Reservation, room: Room) {
+  return {
+    subject: `[회의실 예약 변경] ${reservation.title}`,
+    body: [
+      `${room.name}(${room.floor}층) 회의실 예약 시간이 변경되었습니다.`,
+      `변경된 일시: ${formatRange(reservation)}`,
+      `주최: ${reservation.organizer}`,
+    ].join("\n"),
+  };
+}
+
 export function reminderMail(reservation: Reservation, room: Room) {
   return {
     subject: `[곧 시작] ${reservation.title}`,
