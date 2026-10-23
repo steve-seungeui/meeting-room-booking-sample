@@ -1,5 +1,5 @@
 import { sendMail } from "../notifications/legacyMailer.js";
-import { cancelledMail, confirmedMail } from "../notifications/templates.js";
+import { cancelledMail, confirmedMail, rescheduledMail } from "../notifications/templates.js";
 import type { RoomService } from "../rooms/roomService.js";
 import type { Clock } from "../shared/clock.js";
 import { ConflictError, NotFoundError, ValidationError } from "../shared/errors.js";
@@ -7,7 +7,7 @@ import { newId } from "../shared/ids.js";
 import { overlaps } from "./overlap.js";
 import type { NewReservation, Reservation } from "./reservation.js";
 import type { ReservationRepository } from "./reservationRepository.js";
-import { validateNewReservation } from "./validation.js";
+import { validateNewReservation, validateTimeRange } from "./validation.js";
 
 export class ReservationService {
   constructor(
@@ -64,6 +64,35 @@ export class ReservationService {
     const mail = cancelledMail(cancelled, room);
     await sendMail({ to: [cancelled.organizer, ...cancelled.attendees], ...mail });
     return cancelled;
+  }
+
+  async reschedule(id: string, requestedBy: string, start: Date, end: Date): Promise<Reservation> {
+    const reservation = await this.get(id);
+    if (reservation.organizer !== requestedBy) {
+      throw new ValidationError("예약을 만든 사람만 시간을 바꿀 수 있습니다.");
+    }
+    if (reservation.status === "cancelled") {
+      throw new ValidationError("취소된 예약의 시간은 바꿀 수 없습니다.");
+    }
+    const room = await this.rooms.get(reservation.roomId);
+    validateTimeRange(start, end, this.clock.now());
+
+    if (!(await this.reservations.rescheduleIfAvailable(id, start, end))) {
+      // 겹침 여부는 위의 갱신 시도가 결정했다. 아래 조회는 오류 메시지를 만들 뿐이다.
+      const latest = await this.get(id);
+      if (latest.status === "cancelled") {
+        throw new ValidationError("취소된 예약의 시간은 바꿀 수 없습니다.");
+      }
+      const conflict = await this.reservations.findConflict(reservation.roomId, start, end);
+      throw new ConflictError(
+        `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다${conflict && conflict.id !== id ? `: ${conflict.title}` : ""}`,
+      );
+    }
+
+    const rescheduled = await this.get(id);
+    const mail = rescheduledMail(rescheduled, room);
+    await sendMail({ to: [rescheduled.organizer, ...rescheduled.attendees], ...mail });
+    return rescheduled;
   }
 
   async get(id: string): Promise<Reservation> {

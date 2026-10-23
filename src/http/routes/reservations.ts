@@ -51,5 +51,17 @@ export function reservationRoutes(reservations: ReservationService): Router {
     res.json(toReservationResponse(cancelled));
   });
 
+  router.patch("/:id", async (req, res) => {
+    const requestedBy = requireString(req.header("x-user-email"), "X-User-Email 헤더");
+    const body = req.body ?? {};
+    const updated = await reservations.reschedule(
+      req.params.id,
+      requestedBy,
+      new Date(requireString(body.start, "start")),
+      new Date(requireString(body.end, "end")),
+    );
+    res.json(toReservationResponse(updated));
+  });
+
   return router;
 }
