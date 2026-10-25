@@ -51,7 +51,7 @@ export function reservationRoutes(reservations: ReservationService): Router {
     res.json(toReservationResponse(cancelled));
   });
 
-  router.patch("/:id/time", async (req, res) => {
+  router.patch("/:id", async (req, res) => {
     const requestedBy = requireString(req.header("x-user-email"), "X-User-Email 헤더");
     const body = req.body ?? {};
     const updated = await reservations.reschedule(

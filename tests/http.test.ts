@@ -64,13 +64,13 @@ describe("HTTP API", () => {
     expect(response.status).toBe(400);
   });
 
-  it("PATCH /reservations/:id/time은 시간을 바꾸고, 겹치면 409, 다른 사람이면 400을 돌려준다", async () => {
+  it("PATCH /reservations/:id는 시간을 바꾸고, 겹치면 409, 다른 사람이면 400을 돌려준다", async () => {
     const server = app();
     const created = await request(server).post("/reservations").send(body);
     await request(server)
       .post("/reservations")
       .send({ ...body, start: "2026-11-02T16:00:00+09:00", end: "2026-11-02T17:00:00+09:00" });
-    const url = `/reservations/${created.body.id}/time`;
+    const url = `/reservations/${created.body.id}`;
     const next = { start: "2026-11-02T11:00:00+09:00", end: "2026-11-02T12:00:00+09:00" };
 
     const noHeader = await request(server).patch(url).send(next);
