@@ -54,6 +54,15 @@ export function reservationRoutes(reservations: ReservationService): Router {
   router.patch("/:id", async (req, res) => {
     const requestedBy = requireString(req.header("x-user-email"), "X-User-Email 헤더");
     const body = req.body ?? {};
+    // 본문에 roomId만 있으면 같은 시간대의 다른 회의실로 옮기고, start/end만 있으면 시간을 바꾼다.
+    if (body.roomId !== undefined) {
+      if (body.start !== undefined || body.end !== undefined) {
+        throw new ValidationError("회의실과 시간은 한 번에 함께 바꿀 수 없습니다.");
+      }
+      const moved = await reservations.changeRoom(req.params.id, requestedBy, requireString(body.roomId, "roomId"));
+      res.json(toReservationResponse(moved));
+      return;
+    }
     const updated = await reservations.reschedule(
       req.params.id,
       requestedBy,

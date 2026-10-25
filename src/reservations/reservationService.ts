@@ -1,5 +1,5 @@
 import { sendMail } from "../notifications/legacyMailer.js";
-import { cancelledMail, confirmedMail, rescheduledMail } from "../notifications/templates.js";
+import { cancelledMail, confirmedMail, rescheduledMail, roomChangedMail } from "../notifications/templates.js";
 import type { RoomService } from "../rooms/roomService.js";
 import type { Clock } from "../shared/clock.js";
 import { ConflictError, NotFoundError, ValidationError } from "../shared/errors.js";
@@ -93,6 +93,43 @@ export class ReservationService {
     const mail = rescheduledMail(rescheduled, room);
     await sendMail({ to: [rescheduled.organizer, ...rescheduled.attendees], ...mail });
     return rescheduled;
+  }
+
+  async changeRoom(id: string, requestedBy: string, roomId: string): Promise<Reservation> {
+    const reservation = await this.get(id);
+    if (reservation.organizer !== requestedBy) {
+      throw new ValidationError("예약을 만든 사람만 회의실을 바꿀 수 있습니다.");
+    }
+    if (reservation.status === "cancelled") {
+      throw new ValidationError("취소된 예약의 회의실은 바꿀 수 없습니다.");
+    }
+    if (reservation.roomId === roomId) {
+      return reservation;
+    }
+    const room = await this.rooms.get(roomId);
+    const headcount = new Set([reservation.organizer, ...reservation.attendees]).size;
+    if (headcount > room.capacity) {
+      throw new ValidationError(
+        `참석 인원 ${headcount}명이 ${room.name} 회의실의 수용 인원 ${room.capacity}명을 넘습니다.`,
+      );
+    }
+
+    if (!(await this.reservations.moveToRoomIfAvailable(id, roomId))) {
+      // 실패 원인(겹침 또는 그 사이의 취소)을 가리는 조회일 뿐, 겹침 여부는 위의 변경 시도가 이미 결정했다.
+      const current = await this.get(id);
+      if (current.status === "cancelled") {
+        throw new ValidationError("취소된 예약의 회의실은 바꿀 수 없습니다.");
+      }
+      const conflict = await this.reservations.findConflict(roomId, reservation.start, reservation.end);
+      throw new ConflictError(
+        `${room.name} 회의실은 해당 시간에 이미 예약되어 있습니다${conflict ? `: ${conflict.title}` : ""}`,
+      );
+    }
+
+    const moved = await this.get(id);
+    const mail = roomChangedMail(moved, room);
+    await sendMail({ to: [moved.organizer, ...moved.attendees], ...mail });
+    return moved;
   }
 
   async get(id: string): Promise<Reservation> {

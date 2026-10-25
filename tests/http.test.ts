@@ -87,4 +87,28 @@ describe("HTTP API", () => {
     expect(ok.status).toBe(200);
     expect(ok.body.start).toBe("2026-11-02T02:00:00.000Z");
   });
+
+  it("PATCH /reservations/:id에 roomId만 보내면 회의실을 옮기고, 겹치면 409, 다른 사람이면 400을 돌려준다", async () => {
+    const server = app();
+    const created = await request(server).post("/reservations").send(body);
+    await request(server).post("/reservations").send({ ...body, roomId: "room-501", attendees: [] });
+    const url = `/reservations/${created.body.id}`;
+
+    const stranger = await request(server).patch(url).set("X-User-Email", "lee@example.com").send({ roomId: "room-502" });
+    const conflict = await request(server).patch(url).set("X-User-Email", "kim@example.com").send({ roomId: "room-501" });
+    const both = await request(server)
+      .patch(url)
+      .set("X-User-Email", "kim@example.com")
+      .send({ roomId: "room-502", start: body.start, end: body.end });
+    const unknown = await request(server).patch(url).set("X-User-Email", "kim@example.com").send({ roomId: "room-999" });
+    const ok = await request(server).patch(url).set("X-User-Email", "kim@example.com").send({ roomId: "room-502" });
+
+    expect(stranger.status).toBe(400);
+    expect(conflict.status).toBe(409);
+    expect(both.status).toBe(400);
+    expect(unknown.status).toBe(404);
+    expect(ok.status).toBe(200);
+    expect(ok.body.roomId).toBe("room-502");
+    expect(ok.body.start).toBe(created.body.start);
+  });
 });

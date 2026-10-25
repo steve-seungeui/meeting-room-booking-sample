@@ -20,6 +20,12 @@ export interface ReservationRepository {
    * 바꿨으면 true, 겹침이 있거나 대상이 없거나 취소되어 바꾸지 않았으면 false를 돌려준다.
    */
   rescheduleIfAvailable(id: string, start: Date, end: Date): Promise<boolean>;
+  /**
+   * 취소되지 않은 예약을 같은 시간대의 다른 회의실로, 그 회의실의 다른 예약과 겹치지 않을 때만 옮긴다.
+   * 검사와 변경이 한 문장으로 실행된다.
+   * 옮겼으면 true, 겹침이 있거나 대상이 없거나 취소되어 옮기지 않았으면 false를 돌려준다.
+   */
+  moveToRoomIfAvailable(id: string, roomId: string): Promise<boolean>;
 }
 
 interface ReservationRow {
@@ -149,6 +155,21 @@ export class SqliteReservationRepository implements ReservationRepository {
                  AND other.status <> 'cancelled' AND other.start_at < ? AND other.end_at > ?
            )`,
       [start.toISOString(), end.toISOString(), id, end.toISOString(), start.toISOString()],
+    );
+    return changes > 0;
+  }
+
+  async moveToRoomIfAvailable(id: string, roomId: string): Promise<boolean> {
+    const { changes } = await this.db.run(
+      `UPDATE reservations SET room_id = ?
+         WHERE id = ? AND status <> 'cancelled'
+           AND NOT EXISTS (
+             SELECT 1 FROM reservations other
+               WHERE other.room_id = ? AND other.id <> reservations.id
+                 AND other.status <> 'cancelled'
+                 AND other.start_at < reservations.end_at AND other.end_at > reservations.start_at
+           )`,
+      [roomId, id, roomId],
     );
     return changes > 0;
   }

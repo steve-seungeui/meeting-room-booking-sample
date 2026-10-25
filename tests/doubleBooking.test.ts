@@ -151,4 +151,45 @@ describe("동시 예약 요청", () => {
     const stored = await workerA.reservationService.scheduleOf("room-302", at("00:00"));
     expect(stored.filter((r) => r.start >= at("15:00") && r.start < at("16:00"))).toHaveLength(1);
   });
+
+  it("DB 연결이 서로 다른 두 워커가 서로 다른 예약을 같은 회의실로 동시에 옮기면 한 건만 옮겨지고 나머지는 ConflictError로 거절된다", async () => {
+    const databasePath = join(dir, "reservations.db");
+    const workerA = createServices({ clock, databasePath });
+    const workerB = createServices({ clock, databasePath });
+    const a = await workerA.reservationService.create(booking({ title: "A", roomId: "room-302" }));
+    const b = await workerA.reservationService.create(
+      booking({ title: "B", roomId: "room-501", organizer: "park@example.com", attendees: [] }),
+    );
+
+    const results = await Promise.allSettled([
+      workerA.reservationService.changeRoom(a.id, a.organizer, "room-502"),
+      workerB.reservationService.changeRoom(b.id, b.organizer, "room-502"),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    for (const result of results.filter((r) => r.status === "rejected")) {
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+    }
+    const stored = await workerA.reservationService.scheduleOf("room-502", at("00:00"));
+    expect(stored).toHaveLength(1);
+  });
+
+  it("DB 연결이 서로 다른 두 워커가 새 예약과 회의실 변경을 같은 회의실·시간대로 동시에 보내면 한 건만 남고 나머지는 ConflictError로 거절된다", async () => {
+    const databasePath = join(dir, "reservations.db");
+    const workerA = createServices({ clock, databasePath });
+    const workerB = createServices({ clock, databasePath });
+    const existing = await workerA.reservationService.create(booking({ roomId: "room-302" }));
+
+    const results = await Promise.allSettled([
+      workerA.reservationService.changeRoom(existing.id, existing.organizer, "room-501"),
+      workerB.reservationService.create(booking({ title: "신규", roomId: "room-501", attendees: [] })),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    for (const result of results.filter((r) => r.status === "rejected")) {
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+    }
+    const stored = await workerA.reservationService.scheduleOf("room-501", at("00:00"));
+    expect(stored).toHaveLength(1);
+  });
 });
