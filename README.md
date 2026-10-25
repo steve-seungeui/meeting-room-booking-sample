@@ -19,7 +19,7 @@ npm run typecheck
 | --- | --- |
 | `src/db/` | SQLite 연결과 테이블 정의 |
 | `src/rooms/` | 회의실 목록과 조회 |
-| `src/reservations/` | 예약 생성, 취소, 겹침 판정, 하루 일정 조회 |
+| `src/reservations/` | 예약 생성, 시간 변경, 취소, 겹침 판정, 하루 일정 조회 |
 | `src/notifications/` | 예약 확정, 취소, 리마인더 메일 |
 | `src/jobs/` | 회의 시작 전 리마인더 작업 |
 | `src/http/` | HTTP 라우트와 오류 처리 |

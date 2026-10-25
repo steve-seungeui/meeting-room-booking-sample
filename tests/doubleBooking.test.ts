@@ -105,4 +105,50 @@ describe("동시 예약 요청", () => {
 
     expect(results.every((r) => r.status === "fulfilled")).toBe(true);
   });
+
+  it("DB 연결이 서로 다른 두 워커가 서로 다른 예약을 같은 시간대로 동시에 옮기면 한 건만 옮겨지고 나머지는 ConflictError로 거절된다", async () => {
+    const databasePath = join(dir, "reservations.db");
+    const workerA = createServices({ clock, databasePath });
+    const workerB = createServices({ clock, databasePath });
+    const a = await workerA.reservationService.create(
+      booking({ title: "A", start: at("09:00"), end: at("10:00") }),
+    );
+    const b = await workerA.reservationService.create(
+      booking({ title: "B", organizer: "park@example.com", attendees: [], start: at("13:00"), end: at("14:00") }),
+    );
+
+    const results = await Promise.allSettled([
+      workerA.reservationService.reschedule(a.id, a.organizer, at("15:00"), at("16:00")),
+      workerB.reservationService.reschedule(b.id, b.organizer, at("15:30"), at("16:30")),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    for (const result of results.filter((r) => r.status === "rejected")) {
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+    }
+    const stored = await workerA.reservationService.scheduleOf("room-302", at("00:00"));
+    expect(stored.filter((r) => r.start >= at("15:00"))).toHaveLength(1);
+    expect(stored).toHaveLength(2);
+  });
+
+  it("DB 연결이 서로 다른 두 워커가 새 예약과 시간 변경을 같은 시간대로 동시에 보내면 한 건만 남고 나머지는 ConflictError로 거절된다", async () => {
+    const databasePath = join(dir, "reservations.db");
+    const workerA = createServices({ clock, databasePath });
+    const workerB = createServices({ clock, databasePath });
+    const existing = await workerA.reservationService.create(
+      booking({ start: at("09:00"), end: at("10:00") }),
+    );
+
+    const results = await Promise.allSettled([
+      workerA.reservationService.reschedule(existing.id, existing.organizer, at("15:00"), at("16:00")),
+      workerB.reservationService.create(booking({ title: "신규", start: at("15:00"), end: at("16:00") })),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    for (const result of results.filter((r) => r.status === "rejected")) {
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+    }
+    const stored = await workerA.reservationService.scheduleOf("room-302", at("00:00"));
+    expect(stored.filter((r) => r.start >= at("15:00") && r.start < at("16:00"))).toHaveLength(1);
+  });
 });

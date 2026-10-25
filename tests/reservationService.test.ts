@@ -130,4 +130,73 @@ describe("ReservationService", () => {
       expect(schedule).toHaveLength(0);
     });
   });
+
+  describe("reschedule", () => {
+    it("예약한 사람은 시간을 바꿀 수 있고 참석자에게 메일이 간다", async () => {
+      const created = await services.reservationService.create(booking());
+      clearSentMails();
+
+      const updated = await services.reservationService.reschedule(
+        created.id, "kim@example.com", at("13:00"), at("14:00"),
+      );
+
+      expect(updated.start).toEqual(at("13:00"));
+      expect((await services.reservationService.get(created.id)).end).toEqual(at("14:00"));
+      expect(sentMails()).toHaveLength(1);
+    });
+
+    it("예약한 사람이 아니면 바꿀 수 없다", async () => {
+      const created = await services.reservationService.create(booking());
+
+      await expect(
+        services.reservationService.reschedule(created.id, "lee@example.com", at("13:00"), at("14:00")),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("같은 회의실의 다른 예약과 겹치면 ConflictError로 거절하고 원래 시간을 유지한다", async () => {
+      await services.reservationService.create(booking({ start: at("13:00"), end: at("14:00") }));
+      const created = await services.reservationService.create(booking({ title: "다른 회의" }));
+
+      await expect(
+        services.reservationService.reschedule(created.id, "kim@example.com", at("13:30"), at("14:30")),
+      ).rejects.toBeInstanceOf(ConflictError);
+      expect((await services.reservationService.get(created.id)).start).toEqual(at("10:00"));
+    });
+
+    it("자신의 기존 시간과 겹치게 옮기는 것은 허용한다", async () => {
+      const created = await services.reservationService.create(booking());
+
+      const updated = await services.reservationService.reschedule(
+        created.id, "kim@example.com", at("10:30"), at("11:30"),
+      );
+
+      expect(updated.start).toEqual(at("10:30"));
+    });
+
+    it("취소된 예약이 차지하던 시간으로는 옮길 수 있다", async () => {
+      const other = await services.reservationService.create(booking({ start: at("13:00"), end: at("14:00") }));
+      await services.reservationService.cancel(other.id, other.organizer);
+      const created = await services.reservationService.create(booking({ title: "다른 회의" }));
+
+      await expect(
+        services.reservationService.reschedule(created.id, "kim@example.com", at("13:00"), at("14:00")),
+      ).resolves.toMatchObject({ start: at("13:00") });
+    });
+
+    it("취소된 예약, 없는 예약, 잘못된 시간은 거절한다", async () => {
+      const created = await services.reservationService.create(booking());
+      await services.reservationService.cancel(created.id, "kim@example.com");
+
+      await expect(
+        services.reservationService.reschedule(created.id, "kim@example.com", at("13:00"), at("14:00")),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        services.reservationService.reschedule("rsv_none", "kim@example.com", at("13:00"), at("14:00")),
+      ).rejects.toBeInstanceOf(NotFoundError);
+      const live = await services.reservationService.create(booking({ title: "새 회의" }));
+      await expect(
+        services.reservationService.reschedule(live.id, "kim@example.com", at("14:00"), at("13:00")),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+  });
 });
