@@ -23,9 +23,16 @@ export interface ReservationRepository {
   /**
    * 취소되지 않은 예약을 같은 시간대의 다른 회의실로, 그 회의실의 다른 예약과 겹치지 않을 때만 옮긴다.
    * 검사와 변경이 한 문장으로 실행된다.
-   * 옮겼으면 true, 겹침이 있거나 대상이 없거나 취소되어 옮기지 않았으면 false를 돌려준다.
+   * 정원 검사에 쓴 참석자 목록(attendees)이 그대로일 때만 옮긴다.
+   * 옮겼으면 true, 겹침이 있거나 대상이 없거나 취소되었거나 참석자가 바뀌어 옮기지 않았으면 false를 돌려준다.
    */
-  moveToRoomIfAvailable(id: string, roomId: string): Promise<boolean>;
+  moveToRoomIfAvailable(id: string, roomId: string, attendees: string[]): Promise<boolean>;
+  /**
+   * 취소되지 않은 예약의 참석자를, 정원 검사에 쓴 회의실(roomId)과 참석자 목록(previous)이 그대로일 때만 바꾼다.
+   * 검사 조건과 변경이 한 문장으로 실행되므로 동시에 일어난 회의실 변경이나 참석자 변경을 덮어쓰지 않는다.
+   * 바꿨으면 true, 대상이 없거나 취소되었거나 그 사이에 회의실·참석자가 바뀌어 바꾸지 않았으면 false를 돌려준다.
+   */
+  updateAttendeesIfUnchanged(id: string, roomId: string, previous: string[], next: string[]): Promise<boolean>;
 }
 
 interface ReservationRow {
@@ -159,17 +166,26 @@ export class SqliteReservationRepository implements ReservationRepository {
     return changes > 0;
   }
 
-  async moveToRoomIfAvailable(id: string, roomId: string): Promise<boolean> {
+  async moveToRoomIfAvailable(id: string, roomId: string, attendees: string[]): Promise<boolean> {
     const { changes } = await this.db.run(
       `UPDATE reservations SET room_id = ?
-         WHERE id = ? AND status <> 'cancelled'
+         WHERE id = ? AND status <> 'cancelled' AND attendees = ?
            AND NOT EXISTS (
              SELECT 1 FROM reservations other
                WHERE other.room_id = ? AND other.id <> reservations.id
                  AND other.status <> 'cancelled'
                  AND other.start_at < reservations.end_at AND other.end_at > reservations.start_at
            )`,
-      [roomId, id, roomId],
+      [roomId, id, JSON.stringify(attendees), roomId],
+    );
+    return changes > 0;
+  }
+
+  async updateAttendeesIfUnchanged(id: string, roomId: string, previous: string[], next: string[]): Promise<boolean> {
+    const { changes } = await this.db.run(
+      `UPDATE reservations SET attendees = ?
+         WHERE id = ? AND status <> 'cancelled' AND room_id = ? AND attendees = ?`,
+      [JSON.stringify(next), id, roomId, JSON.stringify(previous)],
     );
     return changes > 0;
   }

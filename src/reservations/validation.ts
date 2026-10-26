@@ -12,12 +12,21 @@ export function validateNewReservation(input: NewReservation, room: Room, now: D
   if (!EMAIL_PATTERN.test(input.organizer)) {
     throw new ValidationError(`주최자 이메일 형식이 올바르지 않습니다: ${input.organizer}`);
   }
-  const invalidAttendee = input.attendees.find((email) => !EMAIL_PATTERN.test(email));
+  validateAttendeeEmails(input.attendees);
+  validateTimeRange(input.start, input.end, now);
+  validateHeadcount(input.organizer, input.attendees, room);
+}
+
+export function validateAttendeeEmails(attendees: string[]): void {
+  const invalidAttendee = attendees.find((email) => !EMAIL_PATTERN.test(email));
   if (invalidAttendee) {
     throw new ValidationError(`참석자 이메일 형식이 올바르지 않습니다: ${invalidAttendee}`);
   }
-  validateTimeRange(input.start, input.end, now);
-  const headcount = new Set([input.organizer, ...input.attendees]).size;
+}
+
+/** 주최자를 포함한 참석 인원(중복 제외)이 회의실의 수용 인원을 넘으면 거절한다. */
+export function validateHeadcount(organizer: string, attendees: string[], room: Room): void {
+  const headcount = new Set([organizer, ...attendees]).size;
   if (headcount > room.capacity) {
     throw new ValidationError(
       `참석 인원 ${headcount}명이 ${room.name} 회의실의 수용 인원 ${room.capacity}명을 넘습니다.`,

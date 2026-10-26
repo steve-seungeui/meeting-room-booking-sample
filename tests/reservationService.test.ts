@@ -199,4 +199,112 @@ describe("ReservationService", () => {
       ).rejects.toBeInstanceOf(ValidationError);
     });
   });
+  describe("updateAttendees", () => {
+    const organizer = "kim@example.com";
+
+    it("추가된 참석자에게는 초대 메일, 빠진 참석자에게는 참석 취소 안내 메일만 보낸다", async () => {
+      const created = await services.reservationService.create(booking());
+      clearSentMails();
+
+      const updated = await services.reservationService.updateAttendees(created.id, organizer, [
+        "lee@example.com",
+        "choi@example.com",
+      ]);
+
+      expect(updated.attendees).toEqual(["lee@example.com", "choi@example.com"]);
+      expect((await services.reservationService.get(created.id)).attendees).toEqual([
+        "lee@example.com",
+        "choi@example.com",
+      ]);
+      const mails = sentMails();
+      expect(mails).toHaveLength(2);
+      expect(mails.find((m) => m.to.includes("choi@example.com"))?.to).toEqual(["choi@example.com"]);
+      expect(mails.find((m) => m.to.includes("park@example.com"))?.to).toEqual(["park@example.com"]);
+      expect(mails.find((m) => m.to.includes("choi@example.com"))?.subject).not.toBe(
+        mails.find((m) => m.to.includes("park@example.com"))?.subject,
+      );
+    });
+
+    it("바뀐 것이 없으면 메일을 보내지 않는다", async () => {
+      const created = await services.reservationService.create(booking());
+      clearSentMails();
+
+      await services.reservationService.updateAttendees(created.id, organizer, [
+        "park@example.com",
+        "lee@example.com",
+      ]);
+
+      expect(sentMails()).toHaveLength(0);
+    });
+
+    it("예약을 만든 사람이 아니면 거절한다", async () => {
+      const created = await services.reservationService.create(booking());
+
+      await expect(
+        services.reservationService.updateAttendees(created.id, "lee@example.com", []),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("취소된 예약과 없는 예약은 바꿀 수 없다", async () => {
+      const created = await services.reservationService.create(booking());
+      await services.reservationService.cancel(created.id, organizer);
+
+      await expect(
+        services.reservationService.updateAttendees(created.id, organizer, []),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        services.reservationService.updateAttendees("rsv-none", organizer, []),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("수용 인원을 넘으면 거절하고 참석자를 그대로 둔다", async () => {
+      // room-301은 수용 인원 4명이다. 주최자 포함 4명은 되고 5명은 안 된다.
+      const created = await services.reservationService.create(
+        booking({ roomId: "room-301", attendees: ["a@example.com"] }),
+      );
+
+      const ok = await services.reservationService.updateAttendees(created.id, organizer, [
+        "a@example.com",
+        "b@example.com",
+        "c@example.com",
+      ]);
+      expect(ok.attendees).toHaveLength(3);
+      clearSentMails();
+
+      await expect(
+        services.reservationService.updateAttendees(created.id, organizer, [
+          "a@example.com",
+          "b@example.com",
+          "c@example.com",
+          "d@example.com",
+        ]),
+      ).rejects.toBeInstanceOf(ValidationError);
+      expect((await services.reservationService.get(created.id)).attendees).toHaveLength(3);
+      expect(sentMails()).toHaveLength(0);
+    });
+
+    it("주최자와 같은 이메일이나 중복은 한 명으로 센다", async () => {
+      const created = await services.reservationService.create(
+        booking({ roomId: "room-301", attendees: [] }),
+      );
+
+      const updated = await services.reservationService.updateAttendees(created.id, organizer, [
+        organizer,
+        "a@example.com",
+        "a@example.com",
+        "b@example.com",
+        "c@example.com",
+      ]);
+
+      expect(updated.attendees).toEqual([organizer, "a@example.com", "b@example.com", "c@example.com"]);
+    });
+
+    it("이메일 형식이 올바르지 않으면 거절한다", async () => {
+      const created = await services.reservationService.create(booking());
+
+      await expect(
+        services.reservationService.updateAttendees(created.id, organizer, ["not-an-email"]),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+  });
 });

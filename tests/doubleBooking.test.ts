@@ -192,4 +192,52 @@ describe("동시 예약 요청", () => {
     const stored = await workerA.reservationService.scheduleOf("room-501", at("00:00"));
     expect(stored).toHaveLength(1);
   });
+  it("DB 연결이 서로 다른 두 워커가 같은 예약의 참석자를 동시에 바꾸면 한 건만 바뀌고 나머지는 ConflictError로 거절된다", async () => {
+    const databasePath = join(dir, "reservations.db");
+    const workerA = createServices({ clock, databasePath });
+    const workerB = createServices({ clock, databasePath });
+    const existing = await workerA.reservationService.create(booking({ roomId: "room-301", attendees: [] }));
+
+    const results = await Promise.allSettled([
+      workerA.reservationService.updateAttendees(existing.id, existing.organizer, ["a@example.com", "b@example.com"]),
+      workerB.reservationService.updateAttendees(existing.id, existing.organizer, ["c@example.com", "d@example.com"]),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    for (const result of results.filter((r) => r.status === "rejected")) {
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+    }
+    const stored = await workerA.reservationService.get(existing.id);
+    expect(stored.attendees).toHaveLength(2);
+  });
+
+  it("DB 연결이 서로 다른 두 워커에서 참석자 추가와 더 작은 회의실로의 이동을 동시에 보내도 수용 인원을 넘는 예약이 남지 않는다", async () => {
+    const databasePath = join(dir, "reservations.db");
+    const workerA = createServices({ clock, databasePath });
+    const workerB = createServices({ clock, databasePath });
+    // room-302(8명)의 3명 예약. 3명이면 room-301(4명)로 옮길 수 있고 7명으로 늘릴 수도 있지만, 둘 다 되면 7명이 4명 방에 남는다.
+    const existing = await workerA.reservationService.create(
+      booking({ roomId: "room-302", attendees: ["a@example.com", "b@example.com"] }),
+    );
+
+    const results = await Promise.allSettled([
+      workerA.reservationService.updateAttendees(existing.id, existing.organizer, [
+        "a@example.com",
+        "b@example.com",
+        "c@example.com",
+        "d@example.com",
+        "e@example.com",
+        "f@example.com",
+      ]),
+      workerB.reservationService.changeRoom(existing.id, existing.organizer, "room-301"),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    for (const result of results.filter((r) => r.status === "rejected")) {
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(ConflictError);
+    }
+    const stored = await workerA.reservationService.get(existing.id);
+    const capacity = stored.roomId === "room-301" ? 4 : 8;
+    expect(new Set([stored.organizer, ...stored.attendees]).size).toBeLessThanOrEqual(capacity);
+  });
 });

@@ -56,6 +56,27 @@ export function roomChangedMail(reservation: Reservation, room: Room) {
   };
 }
 
+export function attendeeInvitedMail(reservation: Reservation, room: Room) {
+  return {
+    subject: `[회의 초대] ${reservation.title}`,
+    body: [
+      `${room.name}(${room.floor}층) 회의실에서 열리는 회의에 초대되었습니다.`,
+      `일시: ${formatRange(reservation)}`,
+      `주최: ${reservation.organizer}`,
+    ].join("\n"),
+  };
+}
+
+export function attendeeRemovedMail(reservation: Reservation, room: Room) {
+  return {
+    subject: `[회의 참석 취소] ${reservation.title}`,
+    body: [
+      `${room.name}(${room.floor}층) 회의실에서 열리는 회의의 참석자에서 제외되었습니다.`,
+      `일시: ${formatRange(reservation)}`,
+    ].join("\n"),
+  };
+}
+
 export function reminderMail(reservation: Reservation, room: Room) {
   return {
     subject: `[곧 시작] ${reservation.title}`,

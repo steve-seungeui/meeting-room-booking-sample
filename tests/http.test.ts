@@ -111,4 +111,36 @@ describe("HTTP API", () => {
     expect(ok.body.roomId).toBe("room-502");
     expect(ok.body.start).toBe(created.body.start);
   });
+  it("PATCH /reservations/:id는 attendees로 참석자를 바꾼다", async () => {
+    const server = app();
+    const created = await request(server).post("/reservations").send(body);
+    const response = await request(server)
+      .patch(`/reservations/${created.body.id}`)
+      .set("X-User-Email", "kim@example.com")
+      .send({ attendees: ["park@example.com"] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.attendees).toEqual(["park@example.com"]);
+  });
+
+  it("PATCH /reservations/:id의 attendees는 예약자만, 배열로, 정원 안에서, 다른 항목 없이 보낼 수 있다", async () => {
+    const server = app();
+    const created = await request(server).post("/reservations").send(body);
+    const patch = () => request(server).patch(`/reservations/${created.body.id}`);
+
+    expect((await patch().send({ attendees: [] })).status).toBe(400);
+    expect((await patch().set("X-User-Email", "lee@example.com").send({ attendees: [] })).status).toBe(400);
+    expect((await patch().set("X-User-Email", "kim@example.com").send({ attendees: "lee@example.com" })).status).toBe(400);
+    const tooMany = Array.from({ length: 8 }, (_, i) => `p${i}@example.com`);
+    expect((await patch().set("X-User-Email", "kim@example.com").send({ attendees: tooMany })).status).toBe(400);
+    const mixed = await patch()
+      .set("X-User-Email", "kim@example.com")
+      .send({ attendees: [], roomId: "room-501" });
+    expect(mixed.status).toBe(400);
+    const missing = await request(server)
+      .patch("/reservations/rsv-none")
+      .set("X-User-Email", "kim@example.com")
+      .send({ attendees: [] });
+    expect(missing.status).toBe(404);
+  });
 });
