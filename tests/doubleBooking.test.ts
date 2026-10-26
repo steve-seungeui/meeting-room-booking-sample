@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createServices } from "../src/app.js";
+import { openDatabase } from "../src/db/database.js";
 import { clearSentMails } from "../src/notifications/legacyMailer.js";
 import type { NewReservation } from "../src/reservations/reservation.js";
+import { SqliteReservationRepository } from "../src/reservations/reservationRepository.js";
 import { fixedClock } from "../src/shared/clock.js";
 import { ConflictError } from "../src/shared/errors.js";
 
@@ -21,6 +23,36 @@ function booking(overrides: Partial<NewReservation> = {}): NewReservation {
     end: at("11:00"),
     ...overrides,
   };
+}
+
+/**
+ * 모든 참여자가 예약을 읽을 때까지 서로 기다리게 하는 장치.
+ * 읽기-검사-쓰기 서비스는 한쪽이 먼저 끝나면 다른 쪽이 바뀐 값을 읽어 정상적으로 순서대로 처리되므로,
+ * 두 요청이 같은 값을 읽은 뒤에 쓰는 경합을 실행 순서에 맡기지 않고 항상 재현하려고 쓴다.
+ */
+function readBarrier(parties: number) {
+  let arrived = 0;
+  let release!: () => void;
+  const open = new Promise<void>((resolve) => (release = resolve));
+  return async () => {
+    arrived += 1;
+    if (arrived >= parties) {
+      release();
+    }
+    await open;
+  };
+}
+
+/** 같은 DB 파일에 연결하되, 예약을 읽은 직후 barrier에서 다른 워커를 기다리는 워커. */
+function gatedWorker(databasePath: string, barrier: () => Promise<void>) {
+  const repository = new SqliteReservationRepository(openDatabase(databasePath));
+  const findById = repository.findById.bind(repository);
+  repository.findById = async (id) => {
+    const found = await findById(id);
+    await barrier();
+    return found;
+  };
+  return createServices({ clock, databasePath, reservationRepository: repository });
 }
 
 describe("동시 예약 요청", () => {
@@ -194,9 +226,12 @@ describe("동시 예약 요청", () => {
   });
   it("DB 연결이 서로 다른 두 워커가 같은 예약의 참석자를 동시에 바꾸면 한 건만 바뀌고 나머지는 ConflictError로 거절된다", async () => {
     const databasePath = join(dir, "reservations.db");
-    const workerA = createServices({ clock, databasePath });
-    const workerB = createServices({ clock, databasePath });
-    const existing = await workerA.reservationService.create(booking({ roomId: "room-301", attendees: [] }));
+    const existing = await createServices({ clock, databasePath }).reservationService.create(
+      booking({ roomId: "room-301", attendees: [] }),
+    );
+    const barrier = readBarrier(2);
+    const workerA = gatedWorker(databasePath, barrier);
+    const workerB = gatedWorker(databasePath, barrier);
 
     const results = await Promise.allSettled([
       workerA.reservationService.updateAttendees(existing.id, existing.organizer, ["a@example.com", "b@example.com"]),
@@ -213,12 +248,13 @@ describe("동시 예약 요청", () => {
 
   it("DB 연결이 서로 다른 두 워커에서 참석자 추가와 더 작은 회의실로의 이동을 동시에 보내도 수용 인원을 넘는 예약이 남지 않는다", async () => {
     const databasePath = join(dir, "reservations.db");
-    const workerA = createServices({ clock, databasePath });
-    const workerB = createServices({ clock, databasePath });
     // room-302(8명)의 3명 예약. 3명이면 room-301(4명)로 옮길 수 있고 7명으로 늘릴 수도 있지만, 둘 다 되면 7명이 4명 방에 남는다.
-    const existing = await workerA.reservationService.create(
+    const existing = await createServices({ clock, databasePath }).reservationService.create(
       booking({ roomId: "room-302", attendees: ["a@example.com", "b@example.com"] }),
     );
+    const barrier = readBarrier(2);
+    const workerA = gatedWorker(databasePath, barrier);
+    const workerB = gatedWorker(databasePath, barrier);
 
     const results = await Promise.allSettled([
       workerA.reservationService.updateAttendees(existing.id, existing.organizer, [
