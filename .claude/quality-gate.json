@@ -1,0 +1,7 @@
+{
+  "checks": [
+    { "name": "타입 검사", "command": "npm run typecheck" },
+    { "name": "테스트", "command": "npm test" }
+  ],
+  "apiDocs": { "routes": "src/http/routes/", "document": "README.md" }
+}
