@@ -31,10 +31,12 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-          EXEC: ${{ steps.claude.outputs.execution_file }}
+          EXEC_OUT: ${{ steps.claude.outputs.execution_file }}
         run: |
+          EXEC="${EXEC_OUT:-$RUNNER_TEMP/claude-execution-output.json}"
           {
             echo "### [실험 기록] 리뷰 실행 결과"
+            echo "exec=$EXEC"; ls -la "$RUNNER_TEMP" | head -20; jq 'length' "$EXEC" 2>&1 | head -3
             echo '```'
             jq -r '[.[] | select(.type=="result")][-1] | "subtype=\(.subtype) turns=\(.num_turns) cost=\(.total_cost_usd)\n\(.result)"' "$EXEC" | head -c 20000
             echo '```'
