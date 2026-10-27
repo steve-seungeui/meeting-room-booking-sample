@@ -6,6 +6,7 @@ on:
 
 jobs:
   review:
+    if: github.event.sender.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
