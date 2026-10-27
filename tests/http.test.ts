@@ -24,6 +24,24 @@ describe("HTTP API", () => {
     expect(response.body.map((room: { id: string }) => room.id)).toEqual(["room-501", "room-502"]);
   });
 
+  it("GET /rooms는 floor 조건으로 거르고, 수용 인원과 함께 쓸 수 있다", async () => {
+    const floor = await request(app()).get("/rooms?floor=5");
+    const both = await request(app()).get("/rooms?floor=5&minCapacity=12");
+
+    expect(floor.status).toBe(200);
+    expect(floor.body.map((room: { id: string }) => room.id)).toEqual(["room-501", "room-502"]);
+    expect(both.status).toBe(200);
+    expect(both.body.every((room: { floor: number }) => room.floor === 5)).toBe(true);
+  });
+
+  it("GET /rooms는 floor가 정수가 아니면 400을 돌려준다", async () => {
+    for (const floor of ["abc", "1.5"]) {
+      const response = await request(app()).get(`/rooms?floor=${floor}`);
+
+      expect(response.status).toBe(400);
+    }
+  });
+
   it("POST /reservations는 201과 예약 정보를 돌려준다", async () => {
     const response = await request(app()).post("/reservations").send(body);
 

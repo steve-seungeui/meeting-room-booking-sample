@@ -21,6 +21,11 @@ describe("RoomService", () => {
     expect(rooms.map((room) => room.id)).toEqual(["room-502"]);
   });
 
+  it("층으로 거른다", async () => {
+    const rooms = await service.list({ floor: 5 });
+    expect(rooms.map((room) => room.id)).toEqual(["room-501", "room-502"]);
+  });
+
   it("없는 회의실을 조회하면 NotFoundError를 던진다", async () => {
     await expect(service.get("room-999")).rejects.toBeInstanceOf(NotFoundError);
   });
