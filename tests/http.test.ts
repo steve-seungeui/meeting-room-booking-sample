@@ -24,6 +24,19 @@ describe("HTTP API", () => {
     expect(response.body.map((room: { id: string }) => room.id)).toEqual(["room-501", "room-502"]);
   });
 
+  it("GET /rooms는 층 조건으로 거른 목록을 돌려준다", async () => {
+    const response = await request(app()).get("/rooms?floor=3");
+
+    expect(response.status).toBe(200);
+    expect(response.body.map((room: { id: string }) => room.id)).toEqual(["room-301", "room-302"]);
+  });
+
+  it.each(["abc", "1.5"])("GET /rooms는 floor=%s이면 400으로 거절한다", async (floor) => {
+    const response = await request(app()).get(`/rooms?floor=${floor}`);
+
+    expect(response.status).toBe(400);
+  });
+
   it("POST /reservations는 201과 예약 정보를 돌려준다", async () => {
     const response = await request(app()).post("/reservations").send(body);
 
