@@ -3,6 +3,7 @@ import type { Equipment, Room } from "./room.js";
 import type { RoomRepository } from "./roomRepository.js";
 
 export interface RoomFilter {
+  floor?: number;
   minCapacity?: number;
   equipment?: Equipment[];
 }
@@ -13,6 +14,7 @@ export class RoomService {
   async list(filter: RoomFilter = {}): Promise<Room[]> {
     const all = await this.rooms.findAll();
     return all
+      .filter((room) => filter.floor === undefined || room.floor === filter.floor)
       .filter((room) => filter.minCapacity === undefined || room.capacity >= filter.minCapacity)
       .filter((room) => (filter.equipment ?? []).every((item) => room.equipment.includes(item)))
       .sort((a, b) => a.floor - b.floor || a.capacity - b.capacity);
