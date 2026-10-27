@@ -17,8 +17,6 @@ jobs:
       issues: write
       id-token: write
       actions: read
-    env:
-      CLAUDE_CODE_SYNC_PLUGIN_INSTALL: "1"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -30,22 +28,6 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          settings: |
-            {
-              "extraKnownMarketplaces": {
-                "org-plugins": {
-                  "source": {
-                    "source": "git",
-                    "url": "https://github.com/steve-seungeui/org-plugins-sample.git",
-                    "ref": "ch12/github-issues"
-                  }
-                }
-              },
-              "enabledPlugins": {
-                "dev-standard@org-plugins": true,
-                "github-issues@org-plugins": true
-              }
-            }
           claude_args: >-
             --max-turns 40
             --allowedTools "Bash(npm test),Bash(npm run typecheck)"
