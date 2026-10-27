@@ -13,6 +13,9 @@ export function roomRoutes(rooms: RoomService, reservations: ReservationService)
 
   router.get("/", async (req, res) => {
     const floor = req.query.floor ? Number(req.query.floor) : undefined;
+    if (floor !== undefined && !Number.isInteger(floor)) {
+      throw new ValidationError("floor는 정수여야 합니다.");
+    }
     const minCapacity = req.query.minCapacity ? Number(req.query.minCapacity) : undefined;
     if (minCapacity !== undefined && !Number.isInteger(minCapacity)) {
       throw new ValidationError("minCapacity는 정수여야 합니다.");
