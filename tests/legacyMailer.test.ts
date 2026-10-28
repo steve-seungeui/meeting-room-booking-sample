@@ -3,10 +3,10 @@ import type { MailMessage } from "../src/notifications/legacyMailer.js";
 
 type LegacyMailer = typeof import("../src/notifications/legacyMailer.js");
 
-// MAIL_RELAY_HOST와 MAIL_SENDER는 모듈을 불러올 때 읽으므로, 환경을 바꾼 뒤 모듈을 새로 불러온다.
-// 지정하지 않은 MAIL_RELAY_HOST/MAIL_SENDER는 비워 두어, 개발자나 CI의 환경 변수에 영향받지 않게 한다.
+// MAIL_RELAY_HOST, MAIL_SENDER, MAIL_RELAY_TOKEN은 모듈을 불러올 때 읽으므로, 환경을 바꾼 뒤 모듈을 새로 불러온다.
+// 지정하지 않은 값은 비워 두어, 개발자나 CI의 환경 변수에 영향받지 않게 한다.
 async function loadMailer(env: Record<string, string | undefined>): Promise<LegacyMailer> {
-  const merged = { MAIL_RELAY_HOST: undefined, MAIL_SENDER: undefined, ...env };
+  const merged = { MAIL_RELAY_HOST: undefined, MAIL_SENDER: undefined, MAIL_RELAY_TOKEN: undefined, ...env };
   for (const [key, value] of Object.entries(merged)) {
     vi.stubEnv(key, value);
   }
@@ -138,6 +138,20 @@ describe("sendMail", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it("MAIL_RELAY_TOKEN이 있어도 콘솔 출력에 토큰을 남기지 않는다", async () => {
+      const mailer = await loadMailer({
+        NODE_ENV: "development",
+        MAIL_RELAY_HOST: undefined,
+        MAIL_RELAY_TOKEN: "test-token-123",
+      });
+
+      await mailer.sendMail(message());
+
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(log.mock.calls)).not.toContain("test-token-123");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it("모듈을 불러온 뒤에 바꾼 환경 변수는 반영하지 않는다", async () => {
       const mailer = await loadMailer({ NODE_ENV: "development", MAIL_RELAY_HOST: undefined, MAIL_SENDER: undefined });
       vi.stubEnv("MAIL_RELAY_HOST", "relay.example.com");
@@ -195,6 +209,76 @@ describe("sendMail", () => {
 
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(JSON.parse(init.body as string).from).toBe("rooms@corp.example.com");
+    });
+
+    it("MAIL_RELAY_TOKEN이 있으면 Authorization: Bearer 헤더로 보낸다", async () => {
+      const mailer = await loadMailer({
+        NODE_ENV: "production",
+        MAIL_RELAY_HOST: "relay.example.com",
+        MAIL_RELAY_TOKEN: "test-token-123",
+      });
+
+      await mailer.sendMail(message());
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.headers).toEqual({
+        "content-type": "application/json",
+        authorization: "Bearer test-token-123",
+      });
+    });
+
+    it("토큰은 요청 본문에 넣지 않는다", async () => {
+      const mailer = await loadMailer({
+        NODE_ENV: "production",
+        MAIL_RELAY_HOST: "relay.example.com",
+        MAIL_RELAY_TOKEN: "test-token-123",
+      });
+
+      await mailer.sendMail(message());
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.body as string).not.toContain("test-token-123");
+    });
+
+    it("MAIL_RELAY_TOKEN이 없거나 빈 문자열이면 Authorization 헤더를 넣지 않는다", async () => {
+      for (const token of [undefined, ""]) {
+        fetchMock.mockClear();
+        const mailer = await loadMailer({
+          NODE_ENV: "production",
+          MAIL_RELAY_HOST: "relay.example.com",
+          MAIL_RELAY_TOKEN: token,
+        });
+
+        await mailer.sendMail(message());
+
+        const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        expect(init.headers).toEqual({ "content-type": "application/json" });
+      }
+    });
+
+    it("릴레이가 토큰을 거절(401)하면 console.error로 남기고 토큰은 로그에 남기지 않는다", async () => {
+      const mailer = await loadMailer({
+        NODE_ENV: "production",
+        MAIL_RELAY_HOST: "relay.example.com",
+        MAIL_RELAY_TOKEN: "test-token-123",
+      });
+      fetchMock.mockResolvedValueOnce(new Response("unauthorized", { status: 401 }));
+
+      await expect(mailer.sendMail(message())).resolves.toBeUndefined();
+
+      expect(error).toHaveBeenCalledWith("[mail] 발송 실패 status=401 subject=회의실 예약 확정");
+      expect(JSON.stringify(error.mock.calls)).not.toContain("test-token-123");
+    });
+
+    it("모듈을 불러온 뒤에 바꾼 MAIL_RELAY_TOKEN은 반영하지 않는다", async () => {
+      const mailer = await loadMailer({ NODE_ENV: "production", MAIL_RELAY_HOST: "relay.example.com" });
+      vi.stubEnv("MAIL_RELAY_TOKEN", "late-token");
+
+      await mailer.sendMail(message());
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.headers).toEqual({ "content-type": "application/json" });
     });
 
     it("릴레이가 실패 응답을 주면 console.error로 남기고 예외를 던지지 않는다", async () => {

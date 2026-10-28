@@ -33,6 +33,11 @@ npm run typecheck
 | `PORT` | `3000` | HTTP 포트 |
 | `DB_PATH` | `data/booking.db` | SQLite 파일 경로 |
 | `WORKERS` | `2` | 워커 프로세스 수 |
+| `MAIL_RELAY_HOST` | (없음) | 메일 릴레이 호스트. 없으면 메일 내용을 콘솔에 출력 |
+| `MAIL_SENDER` | `meeting-rooms@example.com` | 발신자 주소 |
+| `MAIL_RELAY_TOKEN` | (없음) | 메일 릴레이 인증 토큰. `Authorization: Bearer <토큰>` 헤더로 보냄 |
+
+`npm start`와 `npm run dev`는 프로젝트 루트의 `.env` 파일이 있으면 읽습니다(없으면 건너뜀). `.env`는 커밋하지 않습니다.
 
 테스트는 파일 대신 SQLite 메모리 데이터베이스를 씁니다.
 
