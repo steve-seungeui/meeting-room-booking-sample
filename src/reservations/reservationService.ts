@@ -60,12 +60,12 @@ export class ReservationService {
     if (reservation.organizer !== requestedBy) {
       throw new ValidationError("예약을 만든 사람만 취소할 수 있습니다.");
     }
-    const cancelled: Reservation = {
-      ...reservation,
-      status: "cancelled",
-      cancelledAt: this.clock.now(),
-    };
-    await this.reservations.save(cancelled);
+    const cancelledAt = this.clock.now();
+    if (!(await this.reservations.cancelIfActive(id, cancelledAt))) {
+      // 그 사이에 다른 요청이 먼저 취소했다. 취소 메일은 먼저 취소한 쪽이 보냈다.
+      return this.get(id);
+    }
+    const cancelled: Reservation = { ...reservation, status: "cancelled", cancelledAt };
 
     const room = await this.rooms.get(reservation.roomId);
     const mail = cancelledMail(cancelled, room);
