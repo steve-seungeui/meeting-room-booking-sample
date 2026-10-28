@@ -13,6 +13,8 @@ export interface MailMessage {
 
 const RELAY_HOST = process.env.MAIL_RELAY_HOST;
 const SENDER = process.env.MAIL_SENDER ?? "meeting-rooms@example.com";
+// 메일 릴레이는 발송 요청마다 Bearer 토큰 인증을 요구한다.
+const RELAY_TOKEN = process.env.MAIL_RELAY_TOKEN;
 
 const sentLog: MailMessage[] = [];
 
@@ -29,9 +31,13 @@ export async function sendMail(message: MailMessage): Promise<void> {
     return;
   }
   // 운영 환경의 메일 릴레이는 HTTP로 메일 발송 요청을 받는다.
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (RELAY_TOKEN) {
+    headers.authorization = `Bearer ${RELAY_TOKEN}`;
+  }
   const response = await fetch(`https://${RELAY_HOST}/send`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers,
     body: JSON.stringify({ from: SENDER, ...message }),
   });
   if (!response.ok) {
