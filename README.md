@@ -42,7 +42,7 @@ npm run typecheck
 
 | 메서드와 경로 | 기능 |
 | --- | --- |
-| `GET /rooms` | 회의실 목록(`minCapacity`, `equipment`로 거르기) |
+| `GET /rooms` | 회의실 목록(`floor`, `minCapacity`, `equipment`로 거르기) |
 | `GET /rooms/:roomId` | 회의실 조회 |
 | `GET /rooms/:roomId/schedule?date=YYYY-MM-DD` | 회의실의 하루 일정 |
 | `POST /reservations` | 예약 생성 |
