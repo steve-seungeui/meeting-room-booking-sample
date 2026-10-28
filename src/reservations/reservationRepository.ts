@@ -15,6 +15,17 @@ export interface ReservationRepository {
    */
   saveIfAvailable(reservation: Reservation): Promise<boolean>;
   /**
+   * 취소되지 않았고 아직 리마인더를 보내지 않은 예약에 리마인더 발송 시각을 기록한다.
+   * 다른 열은 건드리지 않으므로 동시에 일어난 취소나 변경을 덮어쓰지 않는다.
+   * 기록했으면 true(이 호출이 리마인더를 보낼 책임을 얻음), 이미 보냈거나 취소되었거나 대상이 없으면 false를 돌려준다.
+   */
+  markReminded(id: string, remindedAt: Date): Promise<boolean>;
+  /**
+   * 취소되지 않은 예약을 취소 상태로 바꾼다. 상태 확인과 변경이 한 문장으로 실행되고 다른 열은 건드리지 않는다.
+   * 취소했으면 true, 이미 취소되었거나 대상이 없으면 false를 돌려준다.
+   */
+  cancelIfActive(id: string, cancelledAt: Date): Promise<boolean>;
+  /**
    * 취소되지 않은 예약의 시간대를, 같은 회의실의 다른 예약과 겹치지 않을 때만 바꾼다.
    * 검사와 변경이 한 문장으로 실행된다. 리마인더는 새 시간 기준으로 다시 보내도록 초기화한다.
    * 바꿨으면 true, 겹침이 있거나 대상이 없거나 취소되어 바꾸지 않았으면 false를 돌려준다.
@@ -148,6 +159,24 @@ export class SqliteReservationRepository implements ReservationRepository {
         reservation.end.toISOString(),
         reservation.start.toISOString(),
       ],
+    );
+    return changes > 0;
+  }
+
+  async markReminded(id: string, remindedAt: Date): Promise<boolean> {
+    const { changes } = await this.db.run(
+      `UPDATE reservations SET reminded_at = ?
+         WHERE id = ? AND status <> 'cancelled' AND reminded_at IS NULL`,
+      [remindedAt.toISOString(), id],
+    );
+    return changes > 0;
+  }
+
+  async cancelIfActive(id: string, cancelledAt: Date): Promise<boolean> {
+    const { changes } = await this.db.run(
+      `UPDATE reservations SET status = 'cancelled', cancelled_at = ?
+         WHERE id = ? AND status <> 'cancelled'`,
+      [cancelledAt.toISOString(), id],
     );
     return changes > 0;
   }

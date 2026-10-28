@@ -24,10 +24,14 @@ export async function runReminderJob(
     if (reservation.status !== "confirmed" || reservation.remindedAt) {
       continue;
     }
+    // 읽어 온 예약은 이미 낡았을 수 있다. 발송 기록을 먼저, 상태 조건과 함께 한 문장으로 남겨
+    // 그 사이의 취소를 덮어쓰지 않고, 겹쳐 실행된 작업과 중복 발송도 막는다.
+    if (!(await reservations.markReminded(reservation.id, now))) {
+      continue;
+    }
     const room = await rooms.get(reservation.roomId);
     const mail = reminderMail(reservation, room);
     await sendMail({ to: [reservation.organizer, ...reservation.attendees], ...mail });
-    await reservations.save({ ...reservation, remindedAt: now });
     sent += 1;
   }
   return sent;
