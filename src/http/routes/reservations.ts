@@ -51,5 +51,38 @@ export function reservationRoutes(reservations: ReservationService): Router {
     res.json(toReservationResponse(cancelled));
   });
 
+  router.patch("/:id", async (req, res) => {
+    const requestedBy = requireString(req.header("x-user-email"), "X-User-Email 헤더");
+    const body = req.body ?? {};
+    // 본문에 attendees만 있으면 참석자를 그 목록으로 바꾸고, roomId만 있으면 같은 시간대의 다른 회의실로 옮기고,
+    // start/end만 있으면 시간을 바꾼다. 한 번에 한 가지 항목만 바꿀 수 있다.
+    if (body.attendees !== undefined) {
+      if (body.roomId !== undefined || body.start !== undefined || body.end !== undefined) {
+        throw new ValidationError("참석자는 회의실이나 시간과 한 번에 함께 바꿀 수 없습니다.");
+      }
+      if (!Array.isArray(body.attendees) || !body.attendees.every((email: unknown) => typeof email === "string")) {
+        throw new ValidationError("attendees는 이메일 문자열의 배열이어야 합니다.");
+      }
+      const updated = await reservations.updateAttendees(req.params.id, requestedBy, body.attendees);
+      res.json(toReservationResponse(updated));
+      return;
+    }
+    if (body.roomId !== undefined) {
+      if (body.start !== undefined || body.end !== undefined) {
+        throw new ValidationError("회의실과 시간은 한 번에 함께 바꿀 수 없습니다.");
+      }
+      const moved = await reservations.changeRoom(req.params.id, requestedBy, requireString(body.roomId, "roomId"));
+      res.json(toReservationResponse(moved));
+      return;
+    }
+    const updated = await reservations.reschedule(
+      req.params.id,
+      requestedBy,
+      new Date(requireString(body.start, "start")),
+      new Date(requireString(body.end, "end")),
+    );
+    res.json(toReservationResponse(updated));
+  });
+
   return router;
 }

@@ -2,7 +2,7 @@
   "name": "meeting-room-booking-sample",
   "version": "0.1.0",
   "private": true,
-  "description": "사내 회의실 예약 API 예제 (Claude Code로 완성하는 AI 에이전트 하네스)",
+  "description": "사내 회의실 예약 API",
   "type": "module",
   "license": "MIT",
   "engines": {

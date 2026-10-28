@@ -18,11 +18,14 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS reservations_room ON reservations (room_id);
   CREATE INDEX IF NOT EXISTS reservations_start ON reservations (start_at);
+  -- 겹침 검사(room_id 일치 + end_at > 새 시작)가 지난 예약을 건너뛰고 해당 시간대 근처만 찾도록 한다.
+  CREATE INDEX IF NOT EXISTS reservations_room_end ON reservations (room_id, end_at, start_at);
 `;
 
 /** SQLite 연결을 감싼 비동기 인터페이스 */
 export interface Database {
-  run(sql: string, params?: unknown[]): Promise<void>;
+  /** 문장을 실행하고 영향받은 행 수를 돌려준다. */
+  run(sql: string, params?: unknown[]): Promise<{ changes: number }>;
   get<T>(sql: string, params?: unknown[]): Promise<T | undefined>;
   all<T>(sql: string, params?: unknown[]): Promise<T[]>;
 }
@@ -43,8 +46,14 @@ export function openDatabase(path: string): Database {
   return {
     async run(sql, params = []) {
       await ready;
-      await new Promise<void>((resolve, reject) => {
-        db.run(sql, params, (error) => (error ? reject(error) : resolve()));
+      return new Promise<{ changes: number }>((resolve, reject) => {
+        db.run(sql, params, function (error) {
+          if (error) {
+            reject(error);
+          } else {
+            resolve({ changes: this.changes });
+          }
+        });
       });
     },
     async get<T>(sql: string, params: unknown[] = []) {

@@ -53,6 +53,22 @@ describe("ReservationService", () => {
       expect(next.status).toBe("confirmed");
     });
 
+    it("취소된 예약의 시간대에는 다시 예약할 수 있다", async () => {
+      const cancelled = await services.reservationService.create(booking({ title: "취소될 회의" }));
+      await services.reservationService.cancel(cancelled.id, "kim@example.com");
+
+      const next = await services.reservationService.create(booking({ title: "새 회의" }));
+      expect(next.status).toBe("confirmed");
+
+      // 충돌 메시지에는 취소된 예약이 아니라 확정된 예약이 나와야 한다.
+      const error = await services.reservationService
+        .create(booking({ title: "또 다른 회의" }))
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as ConflictError).message).toContain("새 회의");
+      expect((error as ConflictError).message).not.toContain("취소될 회의");
+    });
+
     it("다른 회의실이면 같은 시간에도 예약할 수 있다", async () => {
       await services.reservationService.create(booking());
       const other = await services.reservationService.create(booking({ roomId: "room-501" }));
@@ -112,6 +128,183 @@ describe("ReservationService", () => {
 
       const schedule = await services.reservationService.scheduleOf("room-302", at("00:00"));
       expect(schedule).toHaveLength(0);
+    });
+  });
+
+  describe("reschedule", () => {
+    it("예약한 사람은 시간을 바꿀 수 있고 참석자에게 메일이 간다", async () => {
+      const created = await services.reservationService.create(booking());
+      clearSentMails();
+
+      const updated = await services.reservationService.reschedule(
+        created.id, "kim@example.com", at("13:00"), at("14:00"),
+      );
+
+      expect(updated.start).toEqual(at("13:00"));
+      expect((await services.reservationService.get(created.id)).end).toEqual(at("14:00"));
+      expect(sentMails()).toHaveLength(1);
+    });
+
+    it("예약한 사람이 아니면 바꿀 수 없다", async () => {
+      const created = await services.reservationService.create(booking());
+
+      await expect(
+        services.reservationService.reschedule(created.id, "lee@example.com", at("13:00"), at("14:00")),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("같은 회의실의 다른 예약과 겹치면 ConflictError로 거절하고 원래 시간을 유지한다", async () => {
+      await services.reservationService.create(booking({ start: at("13:00"), end: at("14:00") }));
+      const created = await services.reservationService.create(booking({ title: "다른 회의" }));
+
+      await expect(
+        services.reservationService.reschedule(created.id, "kim@example.com", at("13:30"), at("14:30")),
+      ).rejects.toBeInstanceOf(ConflictError);
+      expect((await services.reservationService.get(created.id)).start).toEqual(at("10:00"));
+    });
+
+    it("자신의 기존 시간과 겹치게 옮기는 것은 허용한다", async () => {
+      const created = await services.reservationService.create(booking());
+
+      const updated = await services.reservationService.reschedule(
+        created.id, "kim@example.com", at("10:30"), at("11:30"),
+      );
+
+      expect(updated.start).toEqual(at("10:30"));
+    });
+
+    it("취소된 예약이 차지하던 시간으로는 옮길 수 있다", async () => {
+      const other = await services.reservationService.create(booking({ start: at("13:00"), end: at("14:00") }));
+      await services.reservationService.cancel(other.id, other.organizer);
+      const created = await services.reservationService.create(booking({ title: "다른 회의" }));
+
+      await expect(
+        services.reservationService.reschedule(created.id, "kim@example.com", at("13:00"), at("14:00")),
+      ).resolves.toMatchObject({ start: at("13:00") });
+    });
+
+    it("취소된 예약, 없는 예약, 잘못된 시간은 거절한다", async () => {
+      const created = await services.reservationService.create(booking());
+      await services.reservationService.cancel(created.id, "kim@example.com");
+
+      await expect(
+        services.reservationService.reschedule(created.id, "kim@example.com", at("13:00"), at("14:00")),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        services.reservationService.reschedule("rsv_none", "kim@example.com", at("13:00"), at("14:00")),
+      ).rejects.toBeInstanceOf(NotFoundError);
+      const live = await services.reservationService.create(booking({ title: "새 회의" }));
+      await expect(
+        services.reservationService.reschedule(live.id, "kim@example.com", at("14:00"), at("13:00")),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+  });
+  describe("updateAttendees", () => {
+    const organizer = "kim@example.com";
+
+    it("추가된 참석자에게는 초대 메일, 빠진 참석자에게는 참석 취소 안내 메일만 보낸다", async () => {
+      const created = await services.reservationService.create(booking());
+      clearSentMails();
+
+      const updated = await services.reservationService.updateAttendees(created.id, organizer, [
+        "lee@example.com",
+        "choi@example.com",
+      ]);
+
+      expect(updated.attendees).toEqual(["lee@example.com", "choi@example.com"]);
+      expect((await services.reservationService.get(created.id)).attendees).toEqual([
+        "lee@example.com",
+        "choi@example.com",
+      ]);
+      const mails = sentMails();
+      expect(mails).toHaveLength(2);
+      expect(mails.find((m) => m.to.includes("choi@example.com"))?.to).toEqual(["choi@example.com"]);
+      expect(mails.find((m) => m.to.includes("park@example.com"))?.to).toEqual(["park@example.com"]);
+      expect(mails.find((m) => m.to.includes("choi@example.com"))?.subject).not.toBe(
+        mails.find((m) => m.to.includes("park@example.com"))?.subject,
+      );
+    });
+
+    it("바뀐 것이 없으면 메일을 보내지 않는다", async () => {
+      const created = await services.reservationService.create(booking());
+      clearSentMails();
+
+      await services.reservationService.updateAttendees(created.id, organizer, [
+        "park@example.com",
+        "lee@example.com",
+      ]);
+
+      expect(sentMails()).toHaveLength(0);
+    });
+
+    it("예약을 만든 사람이 아니면 거절한다", async () => {
+      const created = await services.reservationService.create(booking());
+
+      await expect(
+        services.reservationService.updateAttendees(created.id, "lee@example.com", []),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("취소된 예약과 없는 예약은 바꿀 수 없다", async () => {
+      const created = await services.reservationService.create(booking());
+      await services.reservationService.cancel(created.id, organizer);
+
+      await expect(
+        services.reservationService.updateAttendees(created.id, organizer, []),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        services.reservationService.updateAttendees("rsv-none", organizer, []),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("수용 인원을 넘으면 거절하고 참석자를 그대로 둔다", async () => {
+      // room-301은 수용 인원 4명이다. 주최자 포함 4명은 되고 5명은 안 된다.
+      const created = await services.reservationService.create(
+        booking({ roomId: "room-301", attendees: ["a@example.com"] }),
+      );
+
+      const ok = await services.reservationService.updateAttendees(created.id, organizer, [
+        "a@example.com",
+        "b@example.com",
+        "c@example.com",
+      ]);
+      expect(ok.attendees).toHaveLength(3);
+      clearSentMails();
+
+      await expect(
+        services.reservationService.updateAttendees(created.id, organizer, [
+          "a@example.com",
+          "b@example.com",
+          "c@example.com",
+          "d@example.com",
+        ]),
+      ).rejects.toBeInstanceOf(ValidationError);
+      expect((await services.reservationService.get(created.id)).attendees).toHaveLength(3);
+      expect(sentMails()).toHaveLength(0);
+    });
+
+    it("주최자와 같은 이메일이나 중복은 한 명으로 센다", async () => {
+      const created = await services.reservationService.create(
+        booking({ roomId: "room-301", attendees: [] }),
+      );
+
+      const updated = await services.reservationService.updateAttendees(created.id, organizer, [
+        organizer,
+        "a@example.com",
+        "a@example.com",
+        "b@example.com",
+        "c@example.com",
+      ]);
+
+      expect(updated.attendees).toEqual([organizer, "a@example.com", "b@example.com", "c@example.com"]);
+    });
+
+    it("이메일 형식이 올바르지 않으면 거절한다", async () => {
+      const created = await services.reservationService.create(booking());
+
+      await expect(
+        services.reservationService.updateAttendees(created.id, organizer, ["not-an-email"]),
+      ).rejects.toBeInstanceOf(ValidationError);
     });
   });
 });

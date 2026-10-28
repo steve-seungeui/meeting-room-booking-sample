@@ -5,7 +5,34 @@ export interface ReservationRepository {
   findById(id: string): Promise<Reservation | undefined>;
   findByRoom(roomId: string): Promise<Reservation[]>;
   findStartingBetween(from: Date, to: Date): Promise<Reservation[]>;
+  /** 같은 회의실에서 주어진 구간과 겹치는 (취소되지 않은) 예약 하나를 돌려준다. 없으면 undefined. */
+  findConflict(roomId: string, start: Date, end: Date): Promise<Reservation | undefined>;
   save(reservation: Reservation): Promise<void>;
+  /**
+   * 같은 회의실에 시간이 겹치는 (취소되지 않은) 예약이 없을 때만 저장한다.
+   * 검사와 저장이 한 문장으로 실행되므로 동시 요청 사이에서도 겹치는 예약이 둘 생기지 않는다.
+   * 저장했으면 true, 겹치는 예약이 있어 저장하지 않았으면 false를 돌려준다.
+   */
+  saveIfAvailable(reservation: Reservation): Promise<boolean>;
+  /**
+   * 취소되지 않은 예약의 시간대를, 같은 회의실의 다른 예약과 겹치지 않을 때만 바꾼다.
+   * 검사와 변경이 한 문장으로 실행된다. 리마인더는 새 시간 기준으로 다시 보내도록 초기화한다.
+   * 바꿨으면 true, 겹침이 있거나 대상이 없거나 취소되어 바꾸지 않았으면 false를 돌려준다.
+   */
+  rescheduleIfAvailable(id: string, start: Date, end: Date): Promise<boolean>;
+  /**
+   * 취소되지 않은 예약을 같은 시간대의 다른 회의실로, 그 회의실의 다른 예약과 겹치지 않을 때만 옮긴다.
+   * 검사와 변경이 한 문장으로 실행된다.
+   * 정원 검사에 쓴 참석자 목록(attendees)이 그대로일 때만 옮긴다.
+   * 옮겼으면 true, 겹침이 있거나 대상이 없거나 취소되었거나 참석자가 바뀌어 옮기지 않았으면 false를 돌려준다.
+   */
+  moveToRoomIfAvailable(id: string, roomId: string, attendees: string[]): Promise<boolean>;
+  /**
+   * 취소되지 않은 예약의 참석자를, 정원 검사에 쓴 회의실(roomId)과 참석자 목록(previous)이 그대로일 때만 바꾼다.
+   * 검사 조건과 변경이 한 문장으로 실행되므로 동시에 일어난 회의실 변경이나 참석자 변경을 덮어쓰지 않는다.
+   * 바꿨으면 true, 대상이 없거나 취소되었거나 그 사이에 회의실·참석자가 바뀌어 바꾸지 않았으면 false를 돌려준다.
+   */
+  updateAttendeesIfUnchanged(id: string, roomId: string, previous: string[], next: string[]): Promise<boolean>;
 }
 
 interface ReservationRow {
@@ -38,6 +65,22 @@ function toReservation(row: ReservationRow): Reservation {
   };
 }
 
+function toParams(reservation: Reservation): unknown[] {
+  return [
+    reservation.id,
+    reservation.roomId,
+    reservation.title,
+    reservation.organizer,
+    JSON.stringify(reservation.attendees),
+    reservation.start.toISOString(),
+    reservation.end.toISOString(),
+    reservation.status,
+    reservation.createdAt.toISOString(),
+    reservation.cancelledAt?.toISOString() ?? null,
+    reservation.remindedAt?.toISOString() ?? null,
+  ];
+}
+
 /**
  * SQLite에 예약을 저장하는 저장소.
  */
@@ -65,6 +108,16 @@ export class SqliteReservationRepository implements ReservationRepository {
     return rows.map(toReservation);
   }
 
+  async findConflict(roomId: string, start: Date, end: Date): Promise<Reservation | undefined> {
+    const row = await this.db.get<ReservationRow>(
+      `SELECT * FROM reservations
+         WHERE room_id = ? AND status <> 'cancelled' AND end_at > ? AND start_at < ?
+         ORDER BY end_at LIMIT 1`,
+      [roomId, start.toISOString(), end.toISOString()],
+    );
+    return row ? toReservation(row) : undefined;
+  }
+
   async save(reservation: Reservation): Promise<void> {
     await this.db.run(
       `INSERT INTO reservations
@@ -75,19 +128,65 @@ export class SqliteReservationRepository implements ReservationRepository {
            attendees = excluded.attendees, start_at = excluded.start_at, end_at = excluded.end_at,
            status = excluded.status, created_at = excluded.created_at,
            cancelled_at = excluded.cancelled_at, reminded_at = excluded.reminded_at`,
+      toParams(reservation),
+    );
+  }
+
+  async saveIfAvailable(reservation: Reservation): Promise<boolean> {
+    // 시각은 항상 toISOString()(고정 길이 UTC)으로 저장하므로 문자열 비교가 시간 비교와 같다.
+    // 겹침 조건은 overlap.ts와 같은 반열린 구간이며, 취소된 예약은 시간대를 점유하지 않는다.
+    const { changes } = await this.db.run(
+      `INSERT INTO reservations
+           (id, room_id, title, organizer, attendees, start_at, end_at, status, created_at, cancelled_at, reminded_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM reservations WHERE room_id = ? AND status <> 'cancelled' AND start_at < ? AND end_at > ?
+         )`,
       [
-        reservation.id,
+        ...toParams(reservation),
         reservation.roomId,
-        reservation.title,
-        reservation.organizer,
-        JSON.stringify(reservation.attendees),
-        reservation.start.toISOString(),
         reservation.end.toISOString(),
-        reservation.status,
-        reservation.createdAt.toISOString(),
-        reservation.cancelledAt?.toISOString() ?? null,
-        reservation.remindedAt?.toISOString() ?? null,
+        reservation.start.toISOString(),
       ],
     );
+    return changes > 0;
+  }
+
+  async rescheduleIfAvailable(id: string, start: Date, end: Date): Promise<boolean> {
+    const { changes } = await this.db.run(
+      `UPDATE reservations SET start_at = ?, end_at = ?, reminded_at = NULL
+         WHERE id = ? AND status <> 'cancelled'
+           AND NOT EXISTS (
+             SELECT 1 FROM reservations other
+               WHERE other.room_id = reservations.room_id AND other.id <> reservations.id
+                 AND other.status <> 'cancelled' AND other.start_at < ? AND other.end_at > ?
+           )`,
+      [start.toISOString(), end.toISOString(), id, end.toISOString(), start.toISOString()],
+    );
+    return changes > 0;
+  }
+
+  async moveToRoomIfAvailable(id: string, roomId: string, attendees: string[]): Promise<boolean> {
+    const { changes } = await this.db.run(
+      `UPDATE reservations SET room_id = ?
+         WHERE id = ? AND status <> 'cancelled' AND attendees = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM reservations other
+               WHERE other.room_id = ? AND other.id <> reservations.id
+                 AND other.status <> 'cancelled'
+                 AND other.start_at < reservations.end_at AND other.end_at > reservations.start_at
+           )`,
+      [roomId, id, JSON.stringify(attendees), roomId],
+    );
+    return changes > 0;
+  }
+
+  async updateAttendeesIfUnchanged(id: string, roomId: string, previous: string[], next: string[]): Promise<boolean> {
+    const { changes } = await this.db.run(
+      `UPDATE reservations SET attendees = ?
+         WHERE id = ? AND status <> 'cancelled' AND room_id = ? AND attendees = ?`,
+      [JSON.stringify(next), id, roomId, JSON.stringify(previous)],
+    );
+    return changes > 0;
   }
 }
